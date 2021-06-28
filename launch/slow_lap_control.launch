@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<launch>
+    <node pkg="slow_lap_control" type="slow_lap_control" name="slow_lap_control" output="screen"/>
+    <param name="constant_v" value="false"/>
+    <param name="v_max" value="15.0"/>
+    <param name="v_const" value="1.0"/>
+    <param name="max_f_gain" value="3.0"/>
+</launch>
+
