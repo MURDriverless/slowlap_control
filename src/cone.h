@@ -5,7 +5,7 @@
 
 struct Cone 
 {
-    Cone(float, float, char);
+    Cone(float, float, char, int);
     PathPoint position;
     char colour;			// Colour of Cone 
     float x_pos_avg;			// Average X position
@@ -16,6 +16,7 @@ struct Cone
     bool mapped = false;		// Mapped geometrically by PathPlanner
     bool seen = false;			// Seen and recorded at least once by SLAM
     float dist;				// Distance to car
+    int id; // ID number
 };
 
 #endif // SRC_CONE_H
