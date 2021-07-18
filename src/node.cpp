@@ -300,14 +300,16 @@ void PlannerNode::AccelerationControl()
 		acc = MAX_ACC;
 	else if (acc <= MAX_DECEL)
 		acc =  MAX_DECEL;
+	
+	acceleration = acc;
 
-	//convert to threshold
+	/*convert to threshold
 	if (acc > 0){
 		acceleration =  acc/MAX_ACC; //acceleration
 	}
 	else{
 		acceleration =  acc/MAX_DECEL; //acceleration
-	}
+	}*/
 }
 void PlannerNode::SteeringControl(float targetX, float targetY)
 {
