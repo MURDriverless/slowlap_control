@@ -26,8 +26,7 @@ add_library(node src/node.cpp)
 add_library(path_planner src/path_planner.cpp)
 add_library(cone src/cone.cpp)
 add_library(path_point src/path_point.cpp)
-add_library(path_follower src/path_follower.cpp)
 
 
-target_link_libraries(slow_lap_control ${catkin_LIBRARIES} node path_planner cone path_point path_follower) 
+target_link_libraries(slow_lap_control ${catkin_LIBRARIES} node path_planner cone path_point) 
 
