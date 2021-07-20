@@ -12,11 +12,11 @@ find_package(catkin REQUIRED COMPONENTS
 
 add_definitions(-std=c++14)
 include_directories(src ${catkin_INCLUDE_DIRS})
-catkin_package(CATKIN_DEPENDS)
+catkin_package()
 
-add_executable(slowlap_follower src/follower.cpp)
+add_executable(path_follower src/follower.cpp)
 
-target_link_libraries(slowlap_follower ${catkin_LIBRARIES})
+target_link_libraries(path_follower ${catkin_LIBRARIES})
 
 
 

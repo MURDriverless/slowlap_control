@@ -14,6 +14,11 @@
 #include "spline.h"
 #include "path_point.h"
 #include <nav_msgs/Odometry.h>
+#include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/Pose.h>
+#include <geometry_msgs/Point.h>
+#include <geometry_msgs/Accel.h> //
+#include <geometry_msgs/Twist.h>
 #include <nav_msgs/Path.h>
 #include "mur_common/path_msg.h"
 #include "mur_common/actuation_msg.h"
@@ -28,19 +33,24 @@
 #define MAX_DECEL -17.658 //-1.8*Gg
 #define MAX_STEER 0.8 //
 #define STEPSIZE 0.2 //spline step size   /////
+#define DT 0.05
 //PID gains:
 #define KP 1   /////
 #define KI 1   /////
 #define KD  1   /////
 //pure pursuit gains
+#define K 0.1
 #define LFV  0.1  ///// look forward gain
 #define LFC  3.5    ///// look ahead distance
-#define V_CONST 1 //constant velocity 1m/s (for now)
+#define V_CONST 1.0 //constant velocity 1m/s (for now)
 
 
 #define ODOM_TOPIC "/mur/slam/Odom"
 #define PATH_TOPIC "/mur/planner/path"
 #define CONTROL_TOPIC "/mur/control/actuation"
+#define ACCEL_TOPIC "/mur/accel_desired"
+#define STEER_TOPIC "/mur/control_desired"
+
 
 class PathFollower
 {
@@ -54,6 +64,9 @@ private:
     ros::Subscriber sub_odom;
     ros::Subscriber sub_path;
     ros::Publisher pub_control;
+    ros::Publisher pub_accel;
+    ros::Publisher pub_steer;
+    ros::Publisher pub_target;
 
     float car_x;
     float car_y;
@@ -61,6 +74,8 @@ private:
     float yaw;
     bool odom_msg_received = false;
     bool new_centre_points = false;
+    float rearX;
+    float rearY;
 
     std::vector<float> path_x;
     std::vector<float> path_y;
@@ -74,11 +89,11 @@ private:
     std::vector<float> yp;
     std::vector<float> T;
 
-    float steering;
-    float acceleration;
+    float steering = 0;
+    float acceleration = 0;
     PathPoint p;
 
-    
+    void waitForMsgs();
     int launchSubscribers();
     int launchPublishers();
     void odomCallback(const nav_msgs::Odometry &msg);
@@ -87,9 +102,16 @@ private:
     void generateSplines();
     void accelerationControl();
     void steeringControl();
-    float getDistFromCar(PathPoint&);
+    void updateRearPos();
+    float getDistFromCar(PathPoint);
+    void clearVars();
     PathPoint getGoalPoint();
 
+    void pushDesiredCtrl();
+    void pushDesiredAccel();
+    void pushTarget();
+    float Quart2EulerYaw(float, float, float, float);
+    float getSign(float&);
 };
 
 
