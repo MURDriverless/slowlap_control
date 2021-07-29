@@ -1,5 +1,0 @@
-<?xml version="1.0"?>
-<launch>
-    <!-- Run Slow Lap Path Follower node -->
-	<node pkg="path_follower" type="path_follower" name="followerNode" output="screen"/>
-</launch>

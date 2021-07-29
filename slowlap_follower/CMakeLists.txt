@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(path_follower)
+project(slowlap_follower)
 
 
 find_package(catkin REQUIRED COMPONENTS
@@ -14,9 +14,9 @@ add_definitions(-std=c++14)
 include_directories(src ${catkin_INCLUDE_DIRS})
 catkin_package()
 
-add_executable(path_follower src/follower.cpp)
+add_executable(slowlap_follower src/follower.cpp)
 
-target_link_libraries(path_follower ${catkin_LIBRARIES})
+target_link_libraries(slowlap_follower ${catkin_LIBRARIES})
 
 
 

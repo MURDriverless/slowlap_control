@@ -10,11 +10,23 @@ struct PathPoint
     float radius = 0;
     float velocity = 0; 
     float angle = 0;
+    void updatePoint(float, float);
+    void updatePoint(PathPoint);
 };
 
 PathPoint::PathPoint() {}
 PathPoint::PathPoint(float X, float Y)
 	: x(X), y(Y) {}
+void PathPoint::updatePoint(float xx,float yy)
+{
+    this->x = xx;
+    this->y = yy;
+}
+void PathPoint::updatePoint(PathPoint p)
+{
+    this->x = p.x;
+    this->y = p.y;
+}
 
 
 

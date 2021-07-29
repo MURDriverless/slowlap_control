@@ -10,6 +10,7 @@
 #include <math.h>
 #include <utility>
 #include <string>
+#include <tf/tf.h>                  // For Convertion from Quartenion to Euler
 
 #include "spline.h"
 #include "path_point.h"
@@ -43,14 +44,17 @@
 #define LFV  0.1  ///// look forward gain
 #define LFC  3.5    ///// look ahead distance
 #define V_CONST 1.0 //constant velocity 1m/s (for now)
-
+#define SPLINE_N 10
+#define STOP_INDEX 2
 
 #define ODOM_TOPIC "/mur/slam/Odom"
 #define PATH_TOPIC "/mur/planner/path"
 #define CONTROL_TOPIC "/mur/control/actuation"
 #define ACCEL_TOPIC "/mur/accel_desired"
 #define STEER_TOPIC "/mur/control_desired"
+#define PATH_VIZ_TOPIC "/mur/planner/path_viz"
 
+const bool DEBUG = true;
 
 class PathFollower
 {
@@ -67,15 +71,24 @@ private:
     ros::Publisher pub_accel;
     ros::Publisher pub_steer;
     ros::Publisher pub_target;
+    ros::Publisher pub_path_viz;
 
     float car_x;
     float car_y;
     float car_v;
-    float yaw;
+    float car_yaw;
     bool odom_msg_received = false;
     bool new_centre_points = false;
     float rearX;
     float rearY;
+    float Lf = LFC;
+    PathPoint currentGoalPoint;
+    bool slowDown = false;
+    bool stopCar = false;
+    bool endOfPath = false;
+    bool endOfLap = false;
+    bool stopSpline = false;
+    bool slowLapFinish = false;
 
     std::vector<float> path_x;
     std::vector<float> path_y;
@@ -83,8 +96,9 @@ private:
 
     std::vector<PathPoint> centre_points; //centre line points of race tack
     std::vector<PathPoint> centre_splined;
-    int index = -1; //centre splined index
-    int oldIndex = -1;
+    std::vector<PathPoint> centre_endOfLap;
+    int index = 1; //centre splined index
+    int index_endOfLap = 5;
     std::vector<float> xp;
     std::vector<float> yp;
     std::vector<float> T;
@@ -105,13 +119,14 @@ private:
     void updateRearPos();
     float getDistFromCar(PathPoint);
     void clearVars();
-    PathPoint getGoalPoint();
+    float getGoalPoint();
 
     void pushDesiredCtrl();
     void pushDesiredAccel();
     void pushTarget();
     float Quart2EulerYaw(float, float, float, float);
     float getSign(float&);
+    void pushPathViz();
 };
 
 
