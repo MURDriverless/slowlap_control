@@ -1,12 +1,26 @@
 #include "follower.h"
 #include <iostream>
 
+
+/**
+ * Slow Lap Path Follower 
+ * How this works:
+ * -receive path points from path planner
+ * -spline points to have smoother curves
+ * -use proportional control to give acceleration commands
+ * -use Pure Pursuit Control to give steering commands
+ * 
+ * author: Aldrei Recamadas (MURauto2021)
+ * ***/
+
+//constructor
 PathFollower::PathFollower(ros::NodeHandle n):nh(n)
 {
     path_x.reserve(500);
     path_y.reserve(500);
     centre_points.reserve(500);
     centre_splined.reserve(2000);
+    centre_endOfLap.reserve(100);
     xp.reserve(100);
     yp.reserve(100);
     T.reserve(100);
@@ -17,11 +31,12 @@ PathFollower::PathFollower(ros::NodeHandle n):nh(n)
     }
 
     waitForMsgs();
-    currentGoalPoint = PathPoint(car_x,car_y);
 
-    ROS_INFO_STREAM("FOLLOWER: follower initialized, pub and sub launched!");
-    
+    //set current position as first goal point
+    currentGoalPoint = PathPoint(car_x,car_y); 
+    ROS_INFO_STREAM("FOLLOWER: follower initialized, publishers and subscribers launched!");
 }
+
 void PathFollower::waitForMsgs()
 {
     while (!odom_msg_received || !path_msg_received && ros::ok()) 
@@ -30,6 +45,7 @@ void PathFollower::waitForMsgs()
     }
 }
 
+// this is like void loop() in Arduino
 void PathFollower::spin()
 {
     waitForMsgs();
@@ -39,15 +55,15 @@ void PathFollower::spin()
         steeringControl();
         accelerationControl();
     }
-    
     pushcontrol();
     pushDesiredAccel();
     pushDesiredCtrl();
     // pushTarget();
-    pushPathViz();  
+    //pushPathViz();  
     clearVars();
-    
 }
+
+//to clear temporary vectors
 void PathFollower::clearVars()
 {
     path_x.clear();
@@ -61,6 +77,7 @@ void PathFollower::clearVars()
 
 }
 
+// standard ROS function
 int PathFollower::launchSubscribers()
 {
     sub_odom = nh.subscribe(ODOM_TOPIC, 1, &PathFollower::odomCallback, this);
@@ -68,6 +85,7 @@ int PathFollower::launchSubscribers()
     
 }
 
+// standard ROS function
 int PathFollower::launchPublishers()
 {
     pub_control = nh.advertise<mur_common::actuation_msg>(CONTROL_TOPIC, 10);
@@ -77,6 +95,7 @@ int PathFollower::launchPublishers()
     pub_path_viz = nh.advertise<nav_msgs::Path>(PATH_VIZ_TOPIC, 1);
 }
 
+// get odometry message from SLAM
 void PathFollower::odomCallback(const nav_msgs::Odometry &msg)
 {
     car_x = msg.pose.pose.position.x;
@@ -98,6 +117,7 @@ void PathFollower::odomCallback(const nav_msgs::Odometry &msg)
     odom_msg_received = true;
 }
 
+// get path message from path planner
 void PathFollower::pathCallback(const mur_common::path_msg &msg)
 {
     for (int i=0; i < msg.x.size(); i++)
@@ -182,7 +202,7 @@ void PathFollower::generateSplines()
         xp.push_back(car_x);
         yp.push_back(car_y);
         T.push_back(0);
-        for (int i=0; i<STOP_INDEX; i++)
+        for (int i=0; i<STOP_INDEX+2; i++)
         {
             xp.push_back(centre_points[i].x);
             yp.push_back(centre_points[i].y);
@@ -335,7 +355,7 @@ void PathFollower::steeringControl()
         if (DEBUG) std::cout<<"[steeringControl] end of path triggered!"<<std::endl;
         slowDown = true;
         
-        if (getDistFromCar(centre_splined.front())< Lf)//if 1 look ahead distance away from finish line
+        if (getDistFromCar(centre_splined.front())< Lf)//if 1 look ahead distance away from finish/start line
         {
             ROS_INFO_STREAM("End of lap near");
             endOfLap = true;
@@ -367,7 +387,7 @@ void PathFollower::updateRearPos()
 	rearY = car_y - ((LENGTH / 2) * sin(car_yaw));
 }
 
-float PathFollower::getDistFromCar(PathPoint pnt) //from rear wheels
+float PathFollower::getDistFromCar(PathPoint &pnt) //from rear wheels
 {
     //updateRearPos();
     float dX = rearX - pnt.x;
@@ -400,13 +420,13 @@ float PathFollower::getGoalPoint()
     if (endOfLap) //if end of lap, change reference path to centre_endOfLap
     {
         currentGoalPoint.updatePoint(centre_endOfLap[index_endOfLap]); 
-        if ((Lf/2) > getDistFromCar(currentGoalPoint))
+        if ((Lf) > getDistFromCar(currentGoalPoint))
         {
             index_endOfLap ++;
             currentGoalPoint.updatePoint(centre_endOfLap[index_endOfLap]); 
 
-            if (index_endOfLap >= centre_endOfLap.size()-1) //last point/ stopping point
-                index_endOfLap = centre_endOfLap.size()-2;
+            if (index_endOfLap >= centre_endOfLap.size()-(STOP_INDEX/STEPSIZE)) //last point/ stopping point
+                index_endOfLap = centre_endOfLap.size()-(STOP_INDEX/STEPSIZE);
         }
 
         if (DEBUG) std::cout << "end of lap goal near" << std::endl;   
