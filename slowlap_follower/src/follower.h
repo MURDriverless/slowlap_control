@@ -42,7 +42,7 @@
 //pure pursuit gains
 #define K 0.1
 #define LFV  0.1  ///// look forward gain
-#define LFC  3.5    ///// look ahead distance
+#define LFC  3    ///// look ahead distance
 #define V_CONST 1.0 //constant velocity 1m/s (for now)
 #define SPLINE_N 10
 #define STOP_INDEX 2
@@ -117,7 +117,7 @@ private:
     void accelerationControl();
     void steeringControl();
     void updateRearPos();
-    float getDistFromCar(PathPoint);
+    float getDistFromCar(PathPoint&);
     void clearVars();
     float getGoalPoint();
 
