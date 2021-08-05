@@ -1,6 +1,13 @@
 #ifndef SRC_PATH_PLANNER_H
 #define SRC_PATH_PLANNER_H
 
+#include "path_point.h"
+#include <ros/ros.h>
+#include <iostream>
+#include <algorithm>
+#include <math.h>
+#include <utility>
+#include <string>
 #include <vector>
 #include <cstdint>
 #include <memory>
@@ -8,11 +15,18 @@
 #include "path_point.h"
 
 #define PI 3.14159265359
+#define TRACKWIDTH 5.5
+#define MAX_PATH_ANGLE 70
+#define MAX_POINT_DIST 10
+#define MIN_POINT_DIST 0.5
+
 
 extern const uint16_t MIN_ANGLE = 90;
 extern const uint16_t MAX_ANGLE = 275;
 extern const uint8_t CP_DIST = 12;
 extern constexpr uint8_t OPP_CP_DIST = 12;
+
+const bool DEBUG = true;  //to show debug messages
 
 class PathPlanner 
 {
@@ -20,6 +34,7 @@ public:
     PathPlanner(float, float, const std::vector<Cone>&, bool, float, float, float);
     void update(const std::vector<Cone>&, const float, const float, std::vector<float>&, std::vector<float>&, std::vector<float>&,std::vector<Cone> &,std::vector<Cone> &);
     void shutdown();
+    bool complete = false;
 
 private:
     std::vector<Cone> raw_cones;
@@ -27,16 +42,18 @@ private:
     std::vector<Cone*> right_cones;		// Cones on right-side of track (sorted)
     std::vector<PathPoint> centre_points;
     std::vector<Cone*> timing_cones;		
-    std::vector<Cone*> l_cones_to_add; //new cones, unsorted
-    std::vector<Cone*> r_cones_to_add; //new cones, unsorted
-    std::vector<PathPoint> final_points;
+    std::vector<Cone*> l_cones_to_add;      //new cones, unsorted
+    std::vector<Cone*> r_cones_to_add;      //new cones, unsorted
+    std::vector<Cone*> oppSide_cone;        //(temp) opposite cone, used for cone sorting and generating path points
+    std::vector<Cone*> thisSide_cone;       //(temp) same cone, used for cone sorting and generating path points
     std::vector<PathPoint> velocity_points;
     std::vector<float> radius_points;
-    std::vector<PathPoint> centre_spline;
-    std::vector<int> mappedIDLeft;
-    std::vector<int> mappedIDRight;
-    std::vector<int> mappedIDRed;
+    std::vector<int> addedIDLeft;
+    std::vector<int> addedIDRight;
+    std::vector<int> addedIDRed;
     PathPoint car_pos;
+    bool timingCalc = false;
+    bool newConesFound = false;
     bool timingEmpty = true;
     bool len_changed;
     bool l_cones_sorted = false;
@@ -44,7 +61,7 @@ private:
     bool set_final_points = false;
     bool left_start_zone = false;
     bool reached_end_zone = false;
-    bool complete = false;
+    
     bool const_velocity;
     bool first_run = true;
     float v_max;
@@ -52,7 +69,7 @@ private:
     float f_gain;
     int findOppositeClosest(const Cone&, const std::vector<Cone*>&);
     void addFirstCentrePoints();
-    void addCentrePoints(const float&, const float&);
+    void addCentrePoints();
     void sortConesByDist(const PathPoint&);
     static bool compareConeDist(Cone* const&, Cone* const&);
     void popConesToAdd();
