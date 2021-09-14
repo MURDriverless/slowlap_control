@@ -523,7 +523,7 @@ void PathFollower::getGoalPoint()
         endOfPath = false;
         currentGoalPoint.updatePoint(centre_splined[index]); //return value
     }
-    if (DEBUG) std::cout<<"[FOLLOWER] new goal point set (" <<currentGoalPoint.x<<", "<<currentGoalPoint.y<<")"<<std::endl;
+    // if (DEBUG) std::cout<<"[FOLLOWER] new goal point set (" <<currentGoalPoint.x<<", "<<currentGoalPoint.y<<")"<<std::endl;
       
 }
 

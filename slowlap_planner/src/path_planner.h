@@ -24,7 +24,7 @@
 #define MAX_PATH_ANGLE2 280     // angle constraint for the path point formed
 #define MAX_POINT_DIST 10       // distance constraint for path point formed
 #define MIN_POINT_DIST 0.5      // distance constraint for path point formed
-#define CERTAIN_RANGE 10         // if cone is within this range, cone positions are certain and no longer updated
+#define CERTAIN_RANGE 12         // if cone is within this range, cone positions are certain and no longer updated
 
 
 const bool DEBUG = true;        //  to show debug messages, switch to false to turn off

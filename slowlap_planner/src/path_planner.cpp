@@ -330,11 +330,11 @@ void PathPlanner::addCentrePoints()
 			if (feasible)
 			{
 				// centre_points.push_back(cp);
-				cenPoints_temp.push_back(cp);
-				cp.cone1->paired ++;
-				cp.cone2->paired ++;	
+				cenPoints_temp.push_back(cp);	
 				thisSide_cone[i]->mapped++;
 				opp_cone->mapped++;
+				thisSide_cone[i]->paired++;
+				opp_cone->paired++;
 			}
 		}
 	}
