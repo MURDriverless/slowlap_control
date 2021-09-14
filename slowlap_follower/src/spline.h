@@ -22,7 +22,7 @@
  * ---------------------------------------------------------------------
  *
  */
-// modification: changed all the double data types to float (Aldrei)
+// modification: changed all the double data types to double (Aldrei)
 
 
 #ifndef TK_SPLINE_H
@@ -46,8 +46,8 @@ namespace tk
 class band_matrix
 {
 private:
-    std::vector< std::vector<float> > m_upper;  // upper band
-    std::vector< std::vector<float> > m_lower;  // lower band
+    std::vector< std::vector<double> > m_upper;  // upper band
+    std::vector< std::vector<double> > m_lower;  // lower band
 public:
     band_matrix() {};                             // constructor
     band_matrix(int dim, int n_u, int n_l);       // constructor
@@ -63,15 +63,15 @@ public:
         return m_lower.size()-1;
     }
     // access operator
-    float & operator () (int i, int j);            // write
-    float   operator () (int i, int j) const;      // read
+    double & operator () (int i, int j);            // write
+    double   operator () (int i, int j) const;      // read
     // we can store an additional diogonal (in m_lower)
-    float& saved_diag(int i);
-    float  saved_diag(int i) const;
+    double& saved_diag(int i);
+    double  saved_diag(int i) const;
     void lu_decompose();
-    std::vector<float> r_solve(const std::vector<float>& b) const;
-    std::vector<float> l_solve(const std::vector<float>& b) const;
-    std::vector<float> lu_solve(const std::vector<float>& b,
+    std::vector<double> r_solve(const std::vector<double>& b) const;
+    std::vector<double> l_solve(const std::vector<double>& b) const;
+    std::vector<double> lu_solve(const std::vector<double>& b,
                                  bool is_lu_decomposed=false);
 
 };
@@ -87,13 +87,13 @@ public:
     };
 
 private:
-    std::vector<float> m_x,m_y;            // x,y coordinates of points
+    std::vector<double> m_x,m_y;            // x,y coordinates of points
     // interpolation parameters
     // f(x) = a*(x-x_i)^3 + b*(x-x_i)^2 + c*(x-x_i) + y_i
-    std::vector<float> m_a,m_b,m_c;        // spline coefficients
-    float  m_b0, m_c0;                     // for left extrapol
+    std::vector<double> m_a,m_b,m_c;        // spline coefficients
+    double  m_b0, m_c0;                     // for left extrapol
     bd_type m_left, m_right;
-    float  m_left_value, m_right_value;
+    double  m_left_value, m_right_value;
     bool    m_force_linear_extrapolation;
 
 public:
@@ -106,12 +106,12 @@ public:
     }
 
     // optional, but if called it has to come be before set_points()
-    void set_boundary(bd_type left, float left_value,
-                      bd_type right, float right_value,
+    void set_boundary(bd_type left, double left_value,
+                      bd_type right, double right_value,
                       bool force_linear_extrapolation=false);
-    void set_points(const std::vector<float>& x,
-                    const std::vector<float>& y, bool cubic_spline=true);
-    float operator() (float x) const;
+    void set_points(const std::vector<double>& x,
+                    const std::vector<double>& y, bool cubic_spline=true);
+    double operator() (double x) const;
 };
 
 
@@ -154,7 +154,7 @@ int band_matrix::dim() const
 
 // defines the new operator (), so that we can access the elements
 // by A(i,j), index going from i=0,...,dim()-1
-float & band_matrix::operator () (int i, int j)
+double & band_matrix::operator () (int i, int j)
 {
     int k=j-i;       // what band is the entry
     assert( (i>=0) && (i<dim()) && (j>=0) && (j<dim()) );
@@ -163,7 +163,7 @@ float & band_matrix::operator () (int i, int j)
     if(k>=0)   return m_upper[k][i];
     else	    return m_lower[-k][i];
 }
-float band_matrix::operator () (int i, int j) const
+double band_matrix::operator () (int i, int j) const
 {
     int k=j-i;       // what band is the entry
     assert( (i>=0) && (i<dim()) && (j>=0) && (j<dim()) );
@@ -173,12 +173,12 @@ float band_matrix::operator () (int i, int j) const
     else	    return m_lower[-k][i];
 }
 // second diag (used in LU decomposition), saved in m_lower
-float band_matrix::saved_diag(int i) const
+double band_matrix::saved_diag(int i) const
 {
     assert( (i>=0) && (i<dim()) );
     return m_lower[0][i];
 }
-float & band_matrix::saved_diag(int i)
+double & band_matrix::saved_diag(int i)
 {
     assert( (i>=0) && (i<dim()) );
     return m_lower[0][i];
@@ -189,7 +189,7 @@ void band_matrix::lu_decompose()
 {
     int  i_max,j_max;
     int  j_min;
-    float x;
+    double x;
 
     // preconditioning
     // normalize column i so that a_ii=1
@@ -220,12 +220,12 @@ void band_matrix::lu_decompose()
     }
 }
 // solves Ly=b
-std::vector<float> band_matrix::l_solve(const std::vector<float>& b) const
+std::vector<double> band_matrix::l_solve(const std::vector<double>& b) const
 {
     assert( this->dim()==(int)b.size() );
-    std::vector<float> x(this->dim());
+    std::vector<double> x(this->dim());
     int j_start;
-    float sum;
+    double sum;
     for(int i=0; i<this->dim(); i++) {
         sum=0;
         j_start=std::max(0,i-this->num_lower());
@@ -235,12 +235,12 @@ std::vector<float> band_matrix::l_solve(const std::vector<float>& b) const
     return x;
 }
 // solves Rx=y
-std::vector<float> band_matrix::r_solve(const std::vector<float>& b) const
+std::vector<double> band_matrix::r_solve(const std::vector<double>& b) const
 {
     assert( this->dim()==(int)b.size() );
-    std::vector<float> x(this->dim());
+    std::vector<double> x(this->dim());
     int j_stop;
-    float sum;
+    double sum;
     for(int i=this->dim()-1; i>=0; i--) {
         sum=0;
         j_stop=std::min(this->dim()-1,i+this->num_upper());
@@ -250,11 +250,11 @@ std::vector<float> band_matrix::r_solve(const std::vector<float>& b) const
     return x;
 }
 
-std::vector<float> band_matrix::lu_solve(const std::vector<float>& b,
+std::vector<double> band_matrix::lu_solve(const std::vector<double>& b,
         bool is_lu_decomposed)
 {
     assert( this->dim()==(int)b.size() );
-    std::vector<float>  x,y;
+    std::vector<double>  x,y;
     if(is_lu_decomposed==false) {
         this->lu_decompose();
     }
@@ -269,8 +269,8 @@ std::vector<float> band_matrix::lu_solve(const std::vector<float>& b,
 // spline implementation
 // -----------------------
 
-void spline::set_boundary(spline::bd_type left, float left_value,
-                          spline::bd_type right, float right_value,
+void spline::set_boundary(spline::bd_type left, double left_value,
+                          spline::bd_type right, double right_value,
                           bool force_linear_extrapolation)
 {
     assert(m_x.size()==0);          // set_points() must not have happened yet
@@ -282,8 +282,8 @@ void spline::set_boundary(spline::bd_type left, float left_value,
 }
 
 
-void spline::set_points(const std::vector<float>& x,
-                        const std::vector<float>& y, bool cubic_spline)
+void spline::set_points(const std::vector<double>& x,
+                        const std::vector<double>& y, bool cubic_spline)
 {
     assert(x.size()==y.size());
     assert(x.size()>2);
@@ -299,7 +299,7 @@ void spline::set_points(const std::vector<float>& x,
         // setting up the matrix and right hand side of the equation system
         // for the parameters b[]
         band_matrix A(n,1,1);
-        std::vector<float>  rhs(n);
+        std::vector<double>  rhs(n);
         for(int i=1; i<n-1; i++) {
             A(i,i-1)=1.0/3.0*(x[i]-x[i-1]);
             A(i,i)=2.0/3.0*(x[i+1]-x[i-1]);
@@ -365,7 +365,7 @@ void spline::set_points(const std::vector<float>& x,
 
     // for the right extrapolation coefficients
     // f_{n-1}(x) = b*(x-x_{n-1})^2 + c*(x-x_{n-1}) + y_{n-1}
-    float h=x[n-1]-x[n-2];
+    double h=x[n-1]-x[n-2];
     // m_b[n-1] is determined by the boundary condition
     m_a[n-1]=0.0;
     m_c[n-1]=3.0*m_a[n-2]*h*h+2.0*m_b[n-2]*h+m_c[n-2];   // = f'_{n-2}(x_{n-1})
@@ -373,16 +373,16 @@ void spline::set_points(const std::vector<float>& x,
         m_b[n-1]=0.0;
 }
 
-float spline::operator() (float x) const
+double spline::operator() (double x) const
 {
     size_t n=m_x.size();
     // find the closest point m_x[idx] < x, idx=0 even if x<m_x[0]
-    std::vector<float>::const_iterator it;
+    std::vector<double>::const_iterator it;
     it=std::lower_bound(m_x.begin(),m_x.end(),x);
     int idx=std::max( int(it-m_x.begin())-1, 0);
 
-    float h=x-m_x[idx];
-    float interpol;
+    double h=x-m_x[idx];
+    double interpol;
     if(x<m_x[0]) {
         // extrapolation to the left
         interpol=(m_b0*h + m_c0)*h + m_y[0];

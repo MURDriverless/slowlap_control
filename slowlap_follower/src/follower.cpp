@@ -1,91 +1,87 @@
+/**
+ * This is the Path follower for the husky
+ * it receives path information from path planner
+ * then passes actuation commands to the Husky
+ * 
+ * uses pure pursuit controller, velocity is constant for now
+ * 
+ * see header file for descriptions of member variables
+ * author: Aldrei (MURauto21)
+*/
+
 #include "follower.h"
 #include <iostream>
 
-
-/**
- * Slow Lap Path Follower 
- * How this works:
- * -receive path points from path planner
- * -spline points to have smoother curves
- * -use proportional control to give acceleration commands
- * -use Pure Pursuit Control to give steering commands
- * 
- * author: Aldrei Recamadas (MURauto2021)
- * ***/
-
-//constructor
-PathFollower::PathFollower(ros::NodeHandle n):nh(n)
+// constructor
+PathFollower::PathFollower(ros::NodeHandle n, double max_v, double max_w)
+                :nh(n), max_v(max_v),max_w(max_w)
 {
-    path_x.reserve(500);
-    path_y.reserve(500);
+    //set capacity of vectors
     centre_points.reserve(500);
     centre_splined.reserve(2000);
-    centre_endOfLap.reserve(100);
-    xp.reserve(100);
-    yp.reserve(100);
-    T.reserve(100);
+    xp.reserve(200);
+    yp.reserve(200);
+    T.reserve(200);
+
     if (ros::ok())
     {
         launchSubscribers();
         launchPublishers();
     }
-
+    
     waitForMsgs();
 
-    //set current position as first goal point
-    currentGoalPoint = PathPoint(car_x,car_y); 
-    ROS_INFO_STREAM("FOLLOWER: follower initialized, publishers and subscribers launched!");
+    ROS_INFO_STREAM("[FOLLOWER] follower initialized, publisher and subscriber launched!");
 }
 
+// spinonce when msgs are received
 void PathFollower::waitForMsgs()
 {
-    while (!odom_msg_received || !path_msg_received && ros::ok()) 
+    if (!path_msg_received || !odom_msg_received && ros::ok()) 
     {
 	ros::spinOnce();
     }
 }
 
-// this is like void loop() in Arduino
+// void loop()
 void PathFollower::spin()
 {
     waitForMsgs();
-    updateRearPos();
-    if (centre_points.size()>1)
-    {
-        steeringControl();
-        accelerationControl();
-    }
-    pushcontrol();
+    DrivingControl();
+    publishCtrl();
+    pushPathViz();
     pushDesiredAccel();
     pushDesiredCtrl();
-    // pushTarget();
-    //pushPathViz();  
     clearVars();
+    
+    if (fastLapReady)
+        shut_down();
+
+    ros::Rate(HZ).sleep();
 }
 
-//to clear temporary vectors
+// clear temporary vectors and flags
 void PathFollower::clearVars()
 {
-    path_x.clear();
-    path_y.clear();
-    xp.clear();
-    yp.clear();
-    T.clear();
     odom_msg_received = false;
     path_msg_received = false;
     new_centre_points = false;
-
+    cenPoints_updated = 0;
+    newGP = false;
+    xp.clear();
+    yp.clear();
+    T.clear();
 }
 
-// standard ROS function
+//standard ROS func
 int PathFollower::launchSubscribers()
 {
     sub_odom = nh.subscribe(ODOM_TOPIC, 1, &PathFollower::odomCallback, this);
 	sub_path = nh.subscribe(PATH_TOPIC, 1, &PathFollower::pathCallback, this);
-    
+    sub_transition = nh.subscribe(FASTLAP_READY_TOPIC, 1, &PathFollower::transitionCallback, this);
 }
 
-// standard ROS function
+//standard ROS func
 int PathFollower::launchPublishers()
 {
     pub_control = nh.advertise<mur_common::actuation_msg>(CONTROL_TOPIC, 10);
@@ -95,18 +91,36 @@ int PathFollower::launchPublishers()
     pub_path_viz = nh.advertise<nav_msgs::Path>(PATH_VIZ_TOPIC, 1);
 }
 
-// get odometry message from SLAM
+//standard ROS func. gets transition msg from fast lap
+void PathFollower::transitionCallback(const mur_common::transition_msg &msg)
+{
+    fastLapReady = msg.fastlapready;
+}
+
+// get odometry messages
 void PathFollower::odomCallback(const nav_msgs::Odometry &msg)
 {
+    
+    if (!initialised)
+    {
+       initX = msg.pose.pose.position.x;
+       initY = msg.pose.pose.position.y;
+       initYaw = car_yaw;
+       initialised = true;
+       
+    }
     car_x = msg.pose.pose.position.x;
     car_y = msg.pose.pose.position.y;
-    car_v = msg.twist.twist.linear.x; //velocity
+    updateRearPos();
     
     double q_x = msg.pose.pose.orientation.x;
     double q_y = msg.pose.pose.orientation.y;
     double q_z = msg.pose.pose.orientation.z;
     double q_w = msg.pose.pose.orientation.w;
-    //convert quaternion to Euler
+
+    car_v = msg.twist.twist.linear.x;
+
+    // convert quaternions to euler
     tf::Quaternion q(q_x, q_y, q_z, q_w);
     tf::Matrix3x3 m(q);
     double roll, pitch, yaw;
@@ -114,44 +128,55 @@ void PathFollower::odomCallback(const nav_msgs::Odometry &msg)
 
     car_yaw = yaw;
 
+    // this formula is from Dennis, it works somehow
+    car_yaw2 = 2 *asin(abs(q_z)) * getSign(q_z) * getSign(q_w);
+
     odom_msg_received = true;
 }
 
-// get path message from path planner
+//get path msgs from path planner
 void PathFollower::pathCallback(const mur_common::path_msg &msg)
-{
-    for (int i=0; i < msg.x.size(); i++)
+{   
+    // if the last 5 path points have changed, copy new path points
+    int j =0;
+    for (int i=centre_points.size()-1; i>=0 ;i--)
     {
-        path_x.push_back(msg.x[i]);
-        path_y.push_back(msg.y[i]);
-    }
-    path_msg_received = true;
-    
-    if (centre_points.size() != path_x.size()) //add end of lap
-    {
-        new_centre_points = true;
-        for(int i=centre_points.size();i<path_x.size();i++)
+        if (calcDist(centre_points[i],PathPoint(msg.x.back(),msg.y.back()))>0.01)
         {
-            centre_points.emplace_back(path_x[i],path_y[i]);
-            // if (DEBUG) std::cout<<"\n FOLLOWER new points received: "<< centre_points[i].x<<", "<<centre_points[i].y<<std::endl;
-            
+            new_centre_points = true;
+            break;
         }
-        // std::cout << "path points size: "<<centre_points.size()<<std::endl;
-        if (centre_points.size()>1) generateSplines();
-        
+        if (j>5) break;
+        j++;
     }
     
-}
-void PathFollower::pushcontrol()
-{
-    mur_common::actuation_msg ctrl_msg;
+    //copy path points msg
+    if (centre_points.empty() || new_centre_points)
+    {
+        centre_points.clear();
+        for (int i=0; i < msg.x.size(); i++)
+        {
+            centre_points.emplace_back(msg.x[i],msg.y[i]);
+        }
+        generateSplines();
+    }
 
-    ctrl_msg.acceleration_threshold = acceleration;
-    ctrl_msg.steering = steering;
+    //check if lap is complete
+    if (calcDist(PathPoint(initX,initY),centre_splined.back())<0.02)
+        plannerComplete = true;
 
-    pub_control.publish(ctrl_msg);
-    // std::cout<<"ctr_msg: "<<ctrl_msg<<std::endl;
+    path_msg_received = true;
+    if (DEBUG)
+    {
+        std::cout<<"[FOLLOWER] path points received: "<<centre_points.size()<<std::endl;
+        for (auto &p:centre_points)
+        {
+            std::cout<<"("<<p.x<<", "<<p.y<<") ";
+        }
+        std::cout<<"\n";
+    }
 }
+
 void PathFollower::pushDesiredCtrl()
 {
     geometry_msgs::Twist ctrl_desired; 
@@ -168,21 +193,23 @@ void PathFollower::pushDesiredAccel()
     accel_desired.linear.y = acceleration * sin(car_yaw);
     pub_accel.publish(accel_desired);
 }
+
+// publish splined path to RVIZ
 void PathFollower::pushPathViz()
 {
     nav_msgs::Path path_viz_msg;
     path_viz_msg.header.frame_id = "map";
 
     std::vector<geometry_msgs::PoseStamped> poses;
-    poses.reserve(centre_points.size());
+    poses.reserve(centre_splined.size());
 
-    for (int p = 0; p < centre_points.size(); p++)
+    for (int p = 0; p < centre_splined.size(); p++)
     {
         geometry_msgs::PoseStamped item; 
         item.header.frame_id = "map";
         item.header.seq = p;
-        item.pose.position.x = centre_points[p].x;
-        item.pose.position.y = centre_points[p].y;
+        item.pose.position.x = centre_splined[p].x;
+        item.pose.position.y = centre_splined[p].y;
         item.pose.position.z = 0.0;
 
         poses.emplace_back(item);
@@ -192,66 +219,186 @@ void PathFollower::pushPathViz()
     pub_path_viz.publish(path_viz_msg);
 }
 
+//publish actuation control commands
+void PathFollower::publishCtrl()
+{
+    mur_common::actuation_msg ctrl_msg;
+
+    ctrl_msg.acceleration_threshold = acceleration;
+    ctrl_msg.steering = steering;
+
+    pub_control.publish(ctrl_msg);
+    // std::cout<<"ctr_msg: "<<ctrl_msg<<std::endl;
+}
+void PathFollower::shut_down()
+{
+    ROS_INFO_STREAM("[FOLLOWER] shutting down...");
+    clearVars();
+    centre_points.clear();
+    centre_splined.clear();
+}
+
+
+// compute linear and angular velocity commands
+// can be confusing, dont mind end of lap codes at first
+void PathFollower::DrivingControl()
+{
+	if (centre_points.size()<4)
+        currentGoalPoint.updatePoint(centre_points.front());
+    if (centre_points.size() <= 1) //no path points yet
+        return; //to ignore rest of function
+    
+    double targetSpeed = V_CONST;
+    double dist = getDistFromCar(currentGoalPoint);
+
+    if (endOfLap)
+    {
+        ROS_INFO_STREAM("[FOLLOWER] SLOW LAP FINISHED! waiting for fast lap ready...");
+        slowLapFinish = true;
+    }
+
+    // check if need to change goal pt 
+    if (Lf > dist) 
+        getGoalPoint();
+
+    if (endOfPath)
+    {
+        if (DEBUG) std::cout<<"[FOLLOWER] end of path triggered!"<<std::endl;        
+        if (plannerComplete)//
+        {
+            endOfLap = true;
+            index = -1;
+            getGoalPoint();
+        }
+    }
+    else
+        targetSpeed = V_CONST; //constant velocity for now
+    if (endOfLap)
+    {
+        if (DEBUG) std::cout<<"[FOLLOWER] Distance to finish line: "<<getDistFromCar(centre_points.front())<<std::endl;
+    }
+        
+    // Acceleration Control
+    //this is just a P controller for now, since velocity is kept constant
+    //can make this into a PID if we have varying velocity
+    //in the future, targetSpeed can be changed
+    double acc = KP * (targetSpeed - car_v);
+	//constrain
+	if (acc >= MAX_ACC)
+		acc = MAX_ACC;
+	else if (acc <= MAX_DECEL)
+		acc =  MAX_DECEL;
+    
+    acceleration = acc;
+
+    // steering control
+    double alpha = getAngleFromCar(currentGoalPoint);
+    double steer = atan2((2 * LENGTH * sin(alpha)),Lf);
+    double targetSteer;
+    if (steer >= MAX_STEER)
+		targetSteer =   (MAX_STEER - 0.001); //copied from sanitise output
+	else if (steer <= -(MAX_STEER))
+		targetSteer =  -(MAX_STEER - 0.001);
+	else
+		targetSteer =  steer;
+
+    // so there is no abrupt changes in steering
+    if ((steering - targetSteer)<0)
+        steering += DELTA_STEER;
+    else if ((steering-targetSteer)>0)
+        steering -= DELTA_STEER;
+    else
+        steering = targetSteer;
+
+    // std::cout<<"acceleration: "<<acceleration<<" steering: "<<steering<<std::endl;
+}
+
+void PathFollower::updateRearPos()
+{
+    rearX = car_x - ((LENGTH / 2) * cos(car_yaw2));
+	rearY = car_y - ((LENGTH / 2) * sin(car_yaw2));
+}
+
+// calculate distance between 2 points
+double PathFollower::calcDist(const PathPoint &p1, const PathPoint &p2)
+{
+    double x_dist = pow(p2.x - p1.x, 2);
+    double y_dist = pow(p2.y - p1.y, 2);
+
+    return sqrt(x_dist + y_dist);
+}
+
+//calculate distance of a point to the car
+double PathFollower::getDistFromCar(PathPoint& pnt) 
+{
+    double dX = car_x - pnt.x;
+	double dY = car_y - pnt.y;
+    return sqrt((dX*dX) + (dY*dY));
+}
+
+// calculate the angle of a point wrt car
+double PathFollower::getAngleFromCar(PathPoint& pnt)
+{
+    double dX = pnt.x - rearX;
+	double dY = pnt.y - rearY;
+    double ang  = atan2(dY,dX) - car_yaw2;
+    // double ang  = atan2(dY,dX) - car_yaw;
+    if (ang > M_PI)
+        ang -= 2*M_PI;
+    else if (ang < -M_PI)
+        ang += 2*M_PI;
+    
+    return ang;
+}
+
+/**********
+* This Function uses tk::spline library (see spline.h)
+* Path points from path planner have metres of interval, they are splined to have a smoother path
+* Splining is computationally expensive, so we will not spline all the path points
+* variables:
+* centre_points: path points from path planner
+* centre_splined: splined path points
+* xp, yp, T: temporary variables for generatting splines using tk::spline
+***********/
 void PathFollower::generateSplines()
 {
     if (endOfLap)
-    {
-        if (stopSpline)
-            return;
-        
-        xp.push_back(car_x);
-        yp.push_back(car_y);
-        T.push_back(0);
-        for (int i=0; i<STOP_INDEX+2; i++)
-        {
-            xp.push_back(centre_points[i].x);
-            yp.push_back(centre_points[i].y);
-            T.push_back(i+1);
-        }
-        tk::spline sx, sy;
-        sx.set_points(T, xp);
-        sy.set_points(T, yp);
-        for (float i = 0; i < T.size(); i += STEPSIZE)
-        {
-            centre_endOfLap.emplace_back(sx(i),sy(i));
-        }
-        if (DEBUG) std::cout<<"[splines] end of lap splined. splined path size: "<<centre_endOfLap.size()<<std::endl;
-        stopSpline = true;
-    }
+    return;
+  
     
     //there must be at least 3 points for cubic spline to work
-    else if (centre_points.size() == 2) //if only 2, make a line
+    if (centre_points.size() <= 2) //if less than = 2, make a line
     {
-        float tempX, tempY;
-        for (auto p:centre_points)
+        centre_splined.clear();
+        double tempX, tempY, slopeY,slopeX,stepX,stepY;
+        for (auto &p:centre_points)
         {
             xp.push_back(p.x);
             yp.push_back(p.y);
         }
-
-        float slopeY = (yp.back() - yp.front()) / STEPSIZE;
-        float slopeX = (xp.back() - xp.front()) / STEPSIZE;
-        for (float i = 0; i<=xp.size(); i+= STEPSIZE)
+       
+        stepY = (yp.back() - yp.front()) * STEPSIZE;
+        stepX = (xp.back() - xp.front()) * STEPSIZE;       
+        for (double i = 0; i<10; i++)
         {
-            tempY = slopeY * i + yp.front();
-            tempX = slopeX * i + xp.front();
+            tempY = (i*stepY) + yp.front();
+            tempX = (i*stepX) + xp.front();
             centre_splined.emplace_back(tempX,tempY);
         }
-        if (DEBUG) std::cout<<" first centre_splined xp, yp : "<<xp.front()<<yp.front()<<std::endl;
-        
     }
 
     else if (centre_points.size()>SPLINE_N) //we will only spline the last N points as it is computationally expensive
-    {
+    {      
+        
         //separate x and y values
         int t = 0;
-        for (int i = centre_points.size()- SPLINE_N; i < centre_points.size(); i++)
-            {
-                xp.push_back(centre_points[i].x);
-                yp.push_back(centre_points[i].y);
-                T.push_back(t);
-                t++;
-            }
+        for (int i = centre_points.size()-SPLINE_N; i < centre_points.size(); i++)
+        {
+            xp.push_back(centre_points[i].x);
+            yp.push_back(centre_points[i].y);
+            T.push_back(t);
+            t++;
+        }
 
         // Generate Spline Objects
         // spline and x and y separately
@@ -262,19 +409,15 @@ void PathFollower::generateSplines()
         
         int temp = (centre_points.size() - SPLINE_N )/ STEPSIZE;
         centre_splined.assign(centre_splined.begin(),centre_splined.begin()+ temp);  //erase the last N points, then replace with new points
-        for (float i = 0; i < T.size(); i += STEPSIZE)
+        for (double i = 0; i < T.size(); i += STEPSIZE)
         {
             centre_splined.emplace_back(sx(i),sy(i));
         }
-        // if (DEBUG) std::cout<<"[splines] new centre_splined size is: "<<centre_splined.size()<<std::endl;
+        if (endOfPath && plannerComplete) std::cout<<"[FOLLOWER] Splined last sections of the track!"<< std::endl;
     }
 
-    else //for 2 < centre points size < 10 
+    else //for 2 < centre points size < N 
     {
-        xp.clear();
-        yp.clear();
-        T.clear();
-
         //separate x and y values
         int t=0;
         for (auto p:centre_points)
@@ -293,106 +436,12 @@ void PathFollower::generateSplines()
         sy.set_points(T, yp);
 
         centre_splined.clear(); //erase centre_splined and replace with new points
-        for (float i = 0; i < T.size(); i += STEPSIZE)
+        for (double i = 0; i < T.size(); i += STEPSIZE)
         {
             centre_splined.emplace_back(sx(i),sy(i));
         }
-        // if (DEBUG) std::cout<<"[splines] new centre_splined x, y : "<<xp.back()<<yp.back()<<std::endl;
     }
        
-}
-
-void PathFollower::accelerationControl()
-{
-    //this is just a P controller for now, since velocity is kept constant
-    //can make this into a PID if we have varying velocity
-    //in the future, targetSpeed can be changed
-    float targetSpeed = V_CONST;
-    if (slowDown || centre_points.size() < 3)
-        targetSpeed = 0.6 * V_CONST;
-    if (slowLapFinish)
-        targetSpeed = 0.0;
-    
-    float acc = KP * (targetSpeed - car_v);
-
-	 //constrain
-	if (acc >= MAX_ACC)
-		acc = MAX_ACC;
-	else if (acc <= MAX_DECEL)
-		acc =  MAX_DECEL;
-    
-    acceleration = acc;
-
-	/*convert to threshold
-	if (acc > 0){
-		acceleration =  acc/MAX_ACC; //acceleration
-	}
-	else{
-		acceleration =  acc/MAX_DECEL; //acceleration
-	}*/
-}
-
-void PathFollower::steeringControl()
-{
-    
-    float dist = getGoalPoint();
-    if (endOfLap)
-    {
-        if (dist < 0.5)
-        {  
-            stopCar = true;
-            ROS_INFO_STREAM("SLOW LAP FINISHED!");
-            slowLapFinish = true;
-        }     
-    }
-
-    if (DEBUG) std::cout << "FOLLOwER: Current car pose: ("<<car_x<<", "<<car_y
-        <<"). Goal point: ("<<currentGoalPoint.x<<", "<<currentGoalPoint.y<<"), "<<dist<<"m away"<<std::endl;
-
-   
-    if (endOfPath)
-    {
-        if (DEBUG) std::cout<<"[steeringControl] end of path triggered!"<<std::endl;
-        slowDown = true;
-        
-        if (getDistFromCar(centre_splined.front())< Lf)//if 1 look ahead distance away from finish/start line
-        {
-            ROS_INFO_STREAM("End of lap near");
-            endOfLap = true;
-            generateSplines(); //trigger splining of centre_endOfPath
-        }
-    }
-    float alpha = atan2((currentGoalPoint.y - rearY),(currentGoalPoint.x - rearX)) - car_yaw;
-	float steer = atan2((2 * LENGTH * sin(alpha))/Lf,1);
-
-    // //constrain
-	// if (abs(steer) >= MAX_STEER)
-	// 	steering =   (MAX_STEER - 0.001); //copied from sanitise output
-	// // else if (steer <= -MAX_STEER)
-	// // 	steering =  -(MAX_STEER - 0.001);
-	// else
-	// 	steering =  steer;
-     //constrain
-	if (steer >= MAX_STEER)
-		steering =   (MAX_STEER - 0.001); //copied from sanitise output
-	else if (steer <= -MAX_STEER)
-		steering =  -(MAX_STEER - 0.001);
-	else
-		steering =  steer;
-}
-
-void PathFollower::updateRearPos()
-{
-    rearX = car_x - ((LENGTH / 2) * cos(car_yaw));
-	rearY = car_y - ((LENGTH / 2) * sin(car_yaw));
-}
-
-float PathFollower::getDistFromCar(PathPoint &pnt) //from rear wheels
-{
-    //updateRearPos();
-    float dX = rearX - pnt.x;
-	float dY = rearY - pnt.y;
-    return sqrt(dX * dX + dY * dY);
 }
 
 
@@ -400,41 +449,56 @@ float PathFollower::getDistFromCar(PathPoint &pnt) //from rear wheels
 * This function searches for the goal point from the splined path points 
 *  (searches for the index of the goal point from centre_splined vector)
 * The concept of look ahead distance of the pure puruit controller is used here
-* it returns the distance to the current goal point
+*
 **/
-float PathFollower::getGoalPoint()
+void PathFollower::getGoalPoint()
 {
-    float dist = getDistFromCar(currentGoalPoint);
+    double temp; //temporary var
+    double dist = 99999.1; //random large number
+
+    //step 1: look for the point nearest to the car
+    if (index == -1 || oldIndex == -1)
+    {
+        for (int i = 0; i < centre_splined.size(); i++)
+        {
+            temp = getDistFromCar(centre_splined[i]);
+            if(dist < temp)
+            {
+                break;
+            }
+            else
+            {
+                dist = temp;
+                index = i;
+            }   
+        }
+        oldIndex = index;
+    }
+
+    else //
+    {
+        index = oldIndex;
+        dist = getDistFromCar(centre_splined[index]); //get dist of old index
+
+        //search for new index with least dist to car
+        for(int j = index+1; j < centre_splined.size(); j++)
+        {
+            temp = getDistFromCar(centre_splined[j]);
+            if (dist < temp)
+            {
+                index = j;
+                break;
+            }
+            dist = temp;
+        }
+        oldIndex = index;
+    }
+
     //look ahead distance
     Lf = LFC;
     //if velocity is not constant, we can adjust lookahead dist using the formula:
     // Lf = LFV * car_lin_v + LFC;
 
-    if (Lf <= dist && !endOfLap) //dont update goal point yet
-        {
-            // if (DEBUG) std::cout<<"FOLLOWER: Current goal point is: ("<<currentGoalPoint.x<<", "<<currentGoalPoint.y<<"), "<<dist<<"m away"<<std::endl;
-            return dist;
-        }
-    
-    
-    if (endOfLap) //if end of lap, change reference path to centre_endOfLap
-    {
-        currentGoalPoint.updatePoint(centre_endOfLap[index_endOfLap]); 
-        if ((Lf) > getDistFromCar(currentGoalPoint))
-        {
-            index_endOfLap ++;
-            currentGoalPoint.updatePoint(centre_endOfLap[index_endOfLap]); 
-
-            if (index_endOfLap >= centre_endOfLap.size()-(STOP_INDEX/STEPSIZE)) //last point/ stopping point
-                index_endOfLap = centre_endOfLap.size()-(STOP_INDEX/STEPSIZE);
-        }
-
-        if (DEBUG) std::cout << "end of lap goal near" << std::endl;   
-        return dist;
-    }
-
-    float temp; //temporary var
-    
     //search for index with distance to car that is closest to look ahead distance
     while (true)
     {
@@ -446,52 +510,53 @@ float PathFollower::getGoalPoint()
         else
             index++;
     }
-    // if (DEBUG) std::cout<<"[getGoalPoint] new goal point set" <<std::endl;
     
     if (index == centre_splined.size()-1) //if at last index of centre_splined path
     {
-        endOfPath = true;
+        if (centre_splined.size()>(5/STEPSIZE))
+            endOfPath = true;
         currentGoalPoint.updatePoint(centre_splined.back());
-        return getDistFromCar(currentGoalPoint);
-        // if (DEBUG) std::cout<<"[getGoalPoint] car near end of path" <<std::endl;
+        if (DEBUG) std::cout<<"[FOLLOWER] car near end of path" <<std::endl;
     }
     else
     {
         endOfPath = false;
         currentGoalPoint.updatePoint(centre_splined[index]); //return value
-        return getDistFromCar(currentGoalPoint);
     }
-        
+    if (DEBUG) std::cout<<"[FOLLOWER] new goal point set (" <<currentGoalPoint.x<<", "<<currentGoalPoint.y<<")"<<std::endl;
+      
 }
 
-
-float PathFollower::Quart2EulerYaw(float q_x, float q_y, float q_z, float q_w)
-    {
-        float siny_cosp = 2.0 * (q_w * q_z + q_x * q_y);
-        float cosy_cosp = 1.0 - (2.0 * (q_y * q_y + q_z * q_z));
-        return std::atan2(siny_cosp, cosy_cosp);
-    }
-
-float PathFollower::getSign(float &num)
+// 
+double PathFollower::getSign(double &num)
 {
     if (num < 0)
-        return -1;
+        return -1.0;
     else 
-        return 1;
+        return 1.0;
 }
+
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "pathFollower"); 
+    ros::init(argc, argv, "PathFollower"); 
     ros::NodeHandle n;
        
-        PathFollower follower(n);
+         // Get parameters from CLI
+    double max_v = atof(argv[1]);
+    double max_w = atof(argv[2]);
+    
+    //Initialize Husky Object
+    
+    PathFollower follower(n,max_v, max_w);
         //ros::Rate freq(20);
 	
-	    while (ros::ok())
-	    {
-	        follower.spin();
-          //  freq.sleep();
-	    }
+	while (ros::ok())
+    {
+	    follower.spin();
+        if (follower.fastLapReady)
+            break;
+	}
+    return 0;
     
 }

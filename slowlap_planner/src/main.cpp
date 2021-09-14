@@ -46,8 +46,10 @@ int main(int argc, char **argv)
 	while (ros::ok())
 	{
 	    planner.spinThread();
-        if (planner.planner->complete)
+        if (planner.fastLapReady)
             break;
 	}
+
     }
+    return 0;
 }

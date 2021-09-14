@@ -1,65 +1,90 @@
+/**
+ * This handles all the ROS stuff like subscribing and publishing msgs
+ * some of these are copied from Joseph (MURauto20) and modified a bit 
+ * see header file for description of member variables
+ * 
+ * author: Aldrei (MURauto21)
+**/
+
 
 #include "node.h"
 
-
-/**
- * This handles all the ROS stuff like subscribing and publishing msgs
- * most of these are copied from (Joseph 2020) and modified a bit 
- * 
-**/
-
+// constructor
 PlannerNode::PlannerNode(ros::NodeHandle n, bool const_velocity, float v_max, float v_const, float max_f_gain)
     : nh(n), const_velocity(const_velocity), v_max(v_max), v_const(v_const), max_f_gain(max_f_gain)
 {
-    times.reserve(std::numeric_limits<uint16_t>::max());
-    rtimes.reserve(std::numeric_limits<uint16_t>::max());
+    X.reserve(300);
+    Y.reserve(300);
+    V.reserve(300);
+    Left.reserve(200);
+    Right.reserve(200);
+    cones.reserve(500);
+    Markers.reserve(1000); 
+    
+    times.reserve(std::numeric_limits<uint16_t>::max());    // diagnostic stuff (MURauto20)
+    rtimes.reserve(std::numeric_limits<uint16_t>::max());   // diagnostic stuff (MURauto20)
+    
     launchSubscribers();
     launchPublishers();
-    
     waitForMsgs();
-
-    try
-    {
-	this->planner = std::unique_ptr<PathPlanner>(new PathPlanner(car_x, car_y, cones, const_velocity, v_max, v_const, max_f_gain));
-    }
-    catch (const char *msg)
-    {
-	ROS_ERROR_STREAM(msg);	
-    }
-
-    ROS_INFO_STREAM("PLANNER: Planner initialized");
-
+    initialisePlanner();
     now = ros::Time::now();
-
-    cone_msg_received = false;
-    odom_msg_received = false;
 }
 
+// initialises planner (path_planner.cpp), waits for cones to be received (especially orange cones)
+void PlannerNode::initialisePlanner()
+{
+    if (cone_msg_received)
+    {
+        int countRed = 0;
+        for (auto &cn: cones)
+        {
+            if (cn.colour == 'r')
+                countRed++;
+        }
+        if ((countRed>1)&& cones.size()>3)
+        {
+            this->planner = std::unique_ptr<PathPlanner>(new PathPlanner(car_x, car_y, cones, const_velocity, v_max, v_const, max_f_gain, Markers));
+            ROS_INFO_STREAM("[PLANNER] Planner initialized");
+            plannerInitialised = true;
+        }
+        else
+            std::cout<<"Not enough cones or Timing cones (orange) not yet found"<<std::endl;
+
+    }
+    else
+        std::cout<<"No cones received yet"<<std::endl;
+
+}
+
+// spinOnce when msgs are received
 void PlannerNode::waitForMsgs()
 {
     while (!cone_msg_received || !odom_msg_received && ros::ok()) 
     {
 	ros::spinOnce();
-	ros::Duration(0.005).sleep();
     }
 }
 
+// standard ROS function. launch subscribers
 int PlannerNode::launchSubscribers()
 {
     try
     {
-	sub_odom = nh.subscribe(ODOM_TOPIC, 1, &PlannerNode::odomCallback, this);
+	sub_odom = nh.subscribe(MUR_ODOM_TOPIC, 1, &PlannerNode::odomCallback, this);
 	sub_cones = nh.subscribe(CONE_TOPIC, 1, &PlannerNode::coneCallback, this);
+    sub_transition = nh.subscribe(FASTLAP_READY_TOPIC, 1, &PlannerNode::transitionCallback, this);
     }
     catch (const char *msg)
     {
 	ROS_ERROR_STREAM(msg);
 	return 0;
     }
-    ROS_INFO_STREAM("PLANNER: Odometry and cone subscribers connect");
+    ROS_INFO_STREAM("[PLANNER] Odometry and cone subscribers connect");
     return 1;
 }
 
+// standard ROS function. launch publishers
 int PlannerNode::launchPublishers()
 {
     try
@@ -69,6 +94,8 @@ int PlannerNode::launchPublishers()
         pub_health = nh.advertise<mur_common::diagnostic_msg>(HEALTH_TOPIC, 1);
         pub_lcones = nh.advertise<mur_common::cone_msg>(SORTED_LCONES_TOPIC, 1);
         pub_rcones = nh.advertise<mur_common::cone_msg>(SORTED_RCONES_TOPIC, 1);
+        pub_pathCones = nh.advertise<visualization_msgs::MarkerArray>(PATH_CONES_TOPIC,1);
+        pub_map = nh.advertise<mur_common::map_msg>(FINISHED_MAP_TOPIC,1);
 
     }
     catch (const char *msg)
@@ -77,29 +104,90 @@ int PlannerNode::launchPublishers()
         return 0;
     }
 
-    ROS_INFO_STREAM("PLANNER: Path, visualisation, diagnostic publishers connected");
+    ROS_INFO_STREAM("[PLANNER] Path, visualisation, diagnostic publishers connected");
     return 1;
 }
 
-
-void PlannerNode::spinThread()
+// these are the last steps when slow lap is finished mapping
+// transition to fast lap
+void PlannerNode::SlowLapFinished()
 {
-    auto rstart = Clock::now();
-    clearTempVectors();
-    waitForMsgs();
-    auto start = Clock::now();
-    planner->update(cones, car_x, car_y, X, Y, V, Left, Right);
-    auto end = Clock::now();
-    pushPath();
-    pushPathViz();
-    pushSortedCones();
-    auto rend = Clock::now();
-    pushHealth(start, end, rstart, rend);
-    int siz = X.size();
-  
+    ROS_INFO_STREAM("[PLANNER] SLOW LAP FINISHED!! [PLANNER] Publishing path points and cone positions...");
+    
+    // publish complete map:
+    mur_common::map_msg map;
+    std::vector<float> ConeX,ConeY;
+    //copy left cones
+    ConeX.reserve(Left.size());
+    ConeY.reserve(Left.size());
+    for (auto &cn:Left)
+    {
+        ConeX.push_back(cn.position.x);
+        ConeY.push_back(cn.position.y);
+    }
+    map.x_o = ConeX;
+    map.y_o = ConeY;
+    ConeX.clear();
+    ConeY.clear();
+    //copy right cones
+    ConeX.reserve(Right.size());
+    ConeY.reserve(Right.size());
+    for (auto &cn:Right)
+    {
+        ConeX.push_back(cn.position.x);
+        ConeY.push_back(cn.position.y);
+    }
+    map.x_i = ConeX;
+    map.y_i = ConeY;
+
+    //copy path points
+    map.x = X;
+    map.y = Y;
+
+    map.mapready = true;
+    map.frame_id = "map";
+
+    pub_map.publish(map);
 }
 
-// diagnostic stuff (2020)
+// shut down
+void PlannerNode::shut_down()
+{
+    ROS_INFO_STREAM("[PLANNER] shutting down...");
+    clearTempVectors();
+    pushPath();
+    // pushPathViz();
+    pushMarkers();     
+}
+
+// void loop()
+void PlannerNode::spinThread()
+{
+    clearTempVectors();
+    waitForMsgs();
+    if (plannerInitialised)
+    {
+        planner->update(cones, car_x, car_y, X, Y, V, Left, Right,Markers,plannerComplete);
+        if (plannerComplete)
+            SlowLapFinished();
+        
+        if(fastLapReady)
+            shut_down();
+        else
+        {
+            pushPath();
+            pushPathViz();
+            pushMarkers();
+        }        
+    }
+    else
+        initialisePlanner();
+        
+   
+    ros::Rate(HZ).sleep();
+}
+
+// diagnostic stuff (MURauto20)
 void PlannerNode::pushHealth(ClockTP& s, ClockTP& e, ClockTP& rs, ClockTP& re)
 {
     mur_common::diagnostic_msg h;
@@ -114,11 +202,13 @@ void PlannerNode::pushHealth(ClockTP& s, ClockTP& e, ClockTP& rs, ClockTP& re)
     pub_health.publish(h);
 }
 
+//clear temporary vectors, and reset some flags
 void PlannerNode::clearTempVectors()
 {
     X.clear();
     Y.clear();
     V.clear();
+    Markers.clear();
     Left.clear();
     Right.clear();
     cones.clear();
@@ -126,11 +216,11 @@ void PlannerNode::clearTempVectors()
     odom_msg_received = false;
 }
 
-// publish path or rviz
+// publish path for rviz
 void PlannerNode::pushPathViz()
 {
     nav_msgs::Path path_viz_msg;
-    path_viz_msg.header.frame_id = "map";
+    path_viz_msg.header.frame_id = "map"; //"map"
 
     std::vector<geometry_msgs::PoseStamped> poses;
     poses.reserve(X.size());
@@ -151,53 +241,7 @@ void PlannerNode::pushPathViz()
     pub_path_viz.publish(path_viz_msg);
 }
 
-//publish sorted cones
-void PlannerNode::pushSortedCones()
-{
-    ros::Time current_time = ros::Time::now();
-
-    mur_common::cone_msg cl; //left cones
-    cl.header.frame_id = "map";
-    cl.header.stamp = current_time;
-
-    mur_common::cone_msg cr; //right cones
-    cr.header.frame_id = "map";
-    cr.header.stamp = current_time;
-
-    std::vector<float> coneX, coneY;
-    std::vector<std::string> col;
-    coneX.reserve(Left.size());
-    coneY.reserve(Left.size());
-    col.reserve(Left.size());
-
-    for (int i = 0;i<Left.size();i++)
-    {
-        coneX.push_back(Left[i].position.x);
-        coneY.push_back(Left[i].position.y);
-        col.push_back("BLUE");
-    }
-    cl.x = coneX;
-    cl.y = coneY;
-    cl.colour = col;
-    
-    coneX.reserve(Right.size());
-    coneY.reserve(Right.size());
-    col.reserve(Right.size());
-    for (int i = 0;i<Right.size();i++)
-    {
-        coneX.push_back(Right[i].position.x);
-        coneY.push_back(Right[i].position.y);
-        col.push_back("YELLOW");
-    }
-    cr.x = coneX;
-    cr.y = coneY;
-    cr.colour = col;
-
-    pub_lcones.publish(cl);
-    pub_rcones.publish(cr);
-}
-
-// publish path points
+// publish path points for path follower
 void PlannerNode::pushPath()
 {
     mur_common::path_msg msg;
@@ -208,7 +252,13 @@ void PlannerNode::pushPath()
     pub_path.publish(msg);
 }
 
-// get odometry messages
+// get transition flag from fast lap
+void PlannerNode::transitionCallback(const mur_common::transition_msg &msg)
+{
+    fastLapReady = msg.fastlapready;
+}
+
+// get odometry messages (from SLAM)
 void PlannerNode::odomCallback(const nav_msgs::Odometry &msg)
 {
     car_x = msg.pose.pose.position.x;
@@ -217,28 +267,105 @@ void PlannerNode::odomCallback(const nav_msgs::Odometry &msg)
     odom_msg_received = true;
 }
 
-// get cone positions
+// get cone positions (from SLAM)
 void PlannerNode::coneCallback(const mur_common::cone_msg &msg)
 {
-    for (int i = 0; i < msg.x.size(); i++)
+    if (msg.x.size() == 0)
+        cone_msg_received = false;
+    else
     {
-	    if (msg.colour[i] == "BLUE")
-	    {
-	      cones.push_back(Cone(msg.x[i], msg.y[i], 'b', i));
-	    }
-	    else if (msg.colour[i] == "YELLOW")
-	    {
-	        cones.push_back(Cone(msg.x[i], msg.y[i], 'y', i)); 
-	    }
-	    else if (msg.colour[i] == "na")
-	    {
-	        std::cout << "PLANNER: 'na' cone colour passed, skipping" << std::endl;
-	    }
-	    else if (msg.colour[i] == "BIG" || msg.colour[i] == "ORANGE")
-	    {
-	        cones.push_back(Cone(msg.x[i], msg.y[i], 'r', i));
-	    }
+        for (int i = 0; i < msg.x.size(); i++)
+        {
+            if (msg.colour[i] == "BLUE")
+            {
+            cones.push_back(Cone(msg.x[i], msg.y[i], 'b', i));
+            }
+            else if (msg.colour[i] == "YELLOW")
+            {
+                cones.push_back(Cone(msg.x[i], msg.y[i], 'y', i)); 
+            }
+            else if (msg.colour[i] == "na")
+            {
+                std::cout << "[PLANNER] 'na' cone colour passed, skipping" << std::endl;
+            }
+            else if (msg.colour[i] == "BIG" || msg.colour[i] == "ORANGE")
+            {
+                cones.push_back(Cone(msg.x[i], msg.y[i], 'r', i));
+            }
+        }
+        cone_msg_received = true;
     }
-    cone_msg_received = true;
+}
+
+// pablish markers to rviz
+void PlannerNode::pushMarkers()
+{
+    visualization_msgs::MarkerArray marks;
+    marks.markers.resize(Markers.size()/2);
+    int j;
+    for (int i=0; i<marks.markers.size(); i++)
+    {
+        j=2*i;
+        setMarkerProperties(&marks.markers[i],Markers[j],Markers[j+1],i,Markers[i].accepted);
+    }
+    pub_pathCones.publish(marks);
+}
+
+// marker properties
+// google Visualisation::Markers message for more details
+void PlannerNode::setMarkerProperties(visualization_msgs::Marker *marker,PathPoint cone1,PathPoint cone2,int n,bool accepted)
+{
+    marker->header.frame_id = "map";
+    marker->header.stamp = ros::Time();
+    marker->header.seq = n;
+    marker->ns = "my_namespace";
+    marker->id = n;
+    marker->type = visualization_msgs::Marker::LINE_LIST;
+    marker->action = visualization_msgs::Marker::ADD;
+    marker->lifetime = ros::Duration(1);
+    geometry_msgs::Point p1, p2;
+
+
+    marker->pose.orientation.x = 0.0;
+    marker->pose.orientation.y = 0.0;
+    marker->pose.orientation.z = 0.0;
+    marker->pose.orientation.w = 1.0;
+    marker->scale.x = 0.1;
+    p1.x = cone1.x;
+    p1.y = cone1.y;
+    p1.z = 0;
+    p2.x = cone2.x;
+    p2.y = cone2.y;
+    p2.z = 0;
+    marker->points.push_back(p1);
+    marker->points.push_back(p2);
+
+    marker->scale.x = 0.3;
+    marker->scale.y = 0.3;
+    marker->scale.z = 0.7;
+
+    // alpha and RGB settings
+    // color.a is opacity, 0: invisible
+    marker->color.a = 0.5;
+
+    if (accepted)
+    {
+        marker->color.r = 1.0;
+        marker->color.g = 0.0;
+        marker->color.b = 0.0;
+    }
+    else
+    {
+        marker->color.a = 1.0;
+        marker->color.r = 0.50;
+        marker->color.g = 0.1;
+        marker->color.b = 1.0;
+        marker->lifetime = ros::Duration(0.1);
+    }
+    if (plannerComplete)
+    marker->color.a = 0.0;
+    
+
+    
 }
 
