@@ -26,7 +26,7 @@
 #define G  9.81                     // gravity
 #define MAX_ACC 11.772              // 1.2*G, copied from Dennis (MURauto20)
 #define MAX_DECEL -17.658           //-1.8*Gg copied from Dennis (MURauto20)
-#define MAX_STEER 0.8               // Copied from Dennis  (MURauto20)
+#define MAX_STEER 0.5//0.8               // Copied from Dennis  (MURauto20)
 #define STEPSIZE 0.1                // spline step size 
 #define SPLINE_N 6                  // number of points to spline
 #define DT 0.05
@@ -42,11 +42,12 @@
 #define K 0.1
 #define LFV  0.1                     // look forward gain
 #define LFC  2.5                    // look ahead distance 
-#define V_CONST 1                  // constant velocity 3m/s (for now)
-#define MAX_V 1                    // for Husky, test only, should be 1m/s to match mur car
+#define V_CONST 1.5                  // constant velocity 3m/s (for now)
+#define MAX_V  2                   // for Husky, test only, should be 1m/s to match mur car
 #define MAX_W 30                     // for Husky, angular velo in degrees
 #define HZ 50                        // ROS spin frequency (can increase to 20)
 
+#define FRAME "map"
 // ROS topics
 #define ODOM_TOPIC "/mur/slam/Odom"
 #define PATH_TOPIC "/mur/planner/path"

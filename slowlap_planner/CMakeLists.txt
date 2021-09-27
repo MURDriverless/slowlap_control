@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(slow_lap_control)
+project(slowlap_planner)
 
 
 find_package(catkin REQUIRED COMPONENTS
@@ -20,13 +20,11 @@ include_directories(include ${catkin_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIR})
 catkin_package(CATKIN_DEPENDS)
 
 
-add_executable(slow_lap_control src/main.cpp)
+add_executable(slowlap_planner src/main.cpp)
 
 add_library(node src/node.cpp)
 add_library(path_planner src/path_planner.cpp)
-add_library(cone src/cone.cpp)
-add_library(path_point src/path_point.cpp)
 
 
-target_link_libraries(slow_lap_control ${catkin_LIBRARIES} node path_planner cone path_point) 
+target_link_libraries(slowlap_planner ${catkin_LIBRARIES} node path_planner) 
 
