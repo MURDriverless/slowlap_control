@@ -130,7 +130,7 @@ void PathFollower::odomCallback(const nav_msgs::Odometry &msg)
 
     // this formula is from Dennis, it works somehow
     car_yaw2 = 2 *asin(abs(q_z)) * getSign(q_z) * getSign(q_w);
-
+    // car_yaw2 = yaw;
     odom_msg_received = true;
 }
 
@@ -198,7 +198,7 @@ void PathFollower::pushDesiredAccel()
 void PathFollower::pushPathViz()
 {
     nav_msgs::Path path_viz_msg;
-    path_viz_msg.header.frame_id = "map";
+    path_viz_msg.header.frame_id = FRAME;
 
     std::vector<geometry_msgs::PoseStamped> poses;
     poses.reserve(centre_splined.size());
@@ -206,7 +206,7 @@ void PathFollower::pushPathViz()
     for (int p = 0; p < centre_splined.size(); p++)
     {
         geometry_msgs::PoseStamped item; 
-        item.header.frame_id = "map";
+        item.header.frame_id = FRAME;
         item.header.seq = p;
         item.pose.position.x = centre_splined[p].x;
         item.pose.position.y = centre_splined[p].y;

@@ -23,7 +23,8 @@ PathPlanner::PathPlanner(float car_x, float car_y, std::vector<Cone> &cones, boo
 	left_cones.reserve(250);
 	right_cones.reserve(250);
 	centre_points.reserve(300);
-	cenPoints_temp.reserve(50);
+	cenPoints_temp1.reserve(50);
+	cenPoints_temp2.reserve(50);
 	rejected_points.reserve(300);
 	thisSide_cone.reserve(150);
 	oppSide_cone.reserve(150);
@@ -33,9 +34,8 @@ PathPlanner::PathPlanner(float car_x, float car_y, std::vector<Cone> &cones, boo
 
 	addCones(cones);								// add new cones to raw cones
 	centre_points.emplace_back(car_x,car_y);		// add the car's initial position to centre points  
-	sortConesByDist(init_pos);						// sort first seen cones by distance
+	addFirstCentrePoints();								// add centre points from sorted cones
 	centralizeTimingCones();						// get mid point of orange cones
-	addCentrePoints();								// add centre points from sorted cones
 	if (timingCalc)
 		sortPathPoints(centre_points,init_pos);
 	resetTempConeVectors();							// Clear pointers and reset l/right_unsorted
@@ -44,11 +44,11 @@ PathPlanner::PathPlanner(float car_x, float car_y, std::vector<Cone> &cones, boo
 
 // takes car and cone infor from node.cpp then update pathpoints to be passed back to node.cpp
 void PathPlanner::update(std::vector<Cone> &new_cones, const float car_x, const float car_y,
-						 std::vector<float> &X, std::vector<float> &Y, std::vector<float> &V,
+						 std::vector<PathPoint> &Path,
 						 std::vector<Cone> &Left,std::vector<Cone> &Right, std::vector<PathPoint> &markers, bool&plannerComp)
 {
 	if (complete) // if race track is complete
-	{	returnResult(X, Y, V,Left,Right,markers);
+	{	returnResult(Path,Left,Right,markers);
 		plannerComp = true;
 	}
 	else
@@ -79,9 +79,10 @@ void PathPlanner::update(std::vector<Cone> &new_cones, const float car_x, const 
 			updateCentrePoints();
 			if (newConesToSort)
 			{
-				if (left_cones.empty() || right_cones.empty())
+				if (!timingCalc && !left_start_zone) // if orange cones not yet passedBy
 				{
-					sortConesByDist(init_pos);
+					centralizeTimingCones();
+					sortPathPoints(centre_points,init_pos);
 				}
 				if (!left_cones.empty() && !right_cones.empty())
 				{
@@ -89,15 +90,11 @@ void PathPlanner::update(std::vector<Cone> &new_cones, const float car_x, const 
 					sortAndPushCone(right_unsorted);	
 					addCentrePoints();
 				}
-				if (!timingCalc && !left_start_zone) // if orange cones not yet passedBy
-				{
-					centralizeTimingCones();
-					sortPathPoints(centre_points,init_pos);
-				}
+				
 			}
 		}
 
-		returnResult(X, Y, V, Left, Right,markers);	
+		returnResult(Path, Left, Right,markers);	
 		
 		resetTempConeVectors();
 	}
@@ -132,17 +129,16 @@ bool PathPlanner::joinFeasible(const float &car_x, const float &car_y)
 }
 
 // sets the vectors to be returned to node.cpp
-void PathPlanner::returnResult(std::vector<float> &X, std::vector<float> &Y, std::vector<float> &V,
+void PathPlanner::returnResult(std::vector<PathPoint> &cp,
 								std::vector<Cone>&Left, std::vector<Cone>&Right,std::vector<PathPoint>&markers)
 {
 	int j=0;
+	if (DEBUG) std::cout<<"[PLANNER] sent path points: "<<centre_points.size()<<std::endl;
 	for (auto &e: centre_points)
 	{
-		X.push_back(e.x); 
-		Y.push_back(e.y); 
-		V.push_back(e.velocity);
+		cp.push_back(e);
 		j++;
-		if ((e.cone1 != NULL)&&(centre_points.size()-j<10)) //to show only 5 markers
+		if ((e.cone1 != NULL)&&(centre_points.size()-j<10)) //to show only 10 markers
 		{
 			markers.push_back(e.cone1->position);
 			markers.back().accepted = true;
@@ -198,18 +194,18 @@ float PathPlanner::calcRelativeAngle(const PathPoint &p1, const PathPoint &p2)
 
 // generates path points by getting the mid point between 2 cones.
 // points can be accepted or rejected, see if/else conditions 
-PathPoint PathPlanner::generateCentrePoint(Cone* cone_one, Cone* cone_two, bool& feasible)
+PathPoint PathPlanner::generateCentrePoint(Cone* cone_one, Cone* cone_two, bool& feasible, std::vector<PathPoint>&cenPoints_temp)
 {
 	PathPoint midpoint(
 		(cone_one->position.x + cone_two->position.x) / 2,
 		(cone_one->position.y + cone_two->position.y) / 2
 	);
 	
-	// get distance between the 2 cones, if too far, not feasible
+	// get distance between the 2 cones, if too far or too near, not feasible
 	float dist = calcDist(cone_one->position,cone_two->position);
-	if (dist > TRACKWIDTH*1.5)
+	if ((dist > TRACKWIDTH*1.5)|| (dist < TRACKWIDTH*0.5))
 	{
-		if (DEBUG) std::cout << "[XX] Rejected point: (" << midpoint.x << ", " << midpoint.y << ")  cones too far!"<<std::endl;
+		if (DEBUG) std::cout << "[XX] Rejected point: (" << midpoint.x << ", " << midpoint.y << ")  cones too far or too near!"<<std::endl;
 		midpoint.cone1 = cone_one;
 		midpoint.cone2 = cone_two;
 		rejected_points.push_back(midpoint);
@@ -219,24 +215,12 @@ PathPoint PathPlanner::generateCentrePoint(Cone* cone_one, Cone* cone_two, bool&
 	
 
 	// calc the distance to the latest path point
-	float dist_back1 = calcDist(centre_points.back(), midpoint);
-	float dist_back2 = calcDist(*(centre_points.end()-2), midpoint);
-
-	// if new path point is closer to the 2nd to the last centre point: wrong direction
-	if(dist_back2<dist_back1)
-	{
-		if (DEBUG) std::cout << "[XX] Rejected point: (" << midpoint.x << ", " << midpoint.y << ")  wrong direction!"<<std::endl;
-		midpoint.cone1 = cone_one;
-		midpoint.cone2 = cone_two;
-		rejected_points.push_back(midpoint);
-		feasible = false;
-		return midpoint;
-	}
-
+	float dist_back1 = calcDist(cenPoints_temp.back(), midpoint);
+	float dist_back2 = calcDist(*(cenPoints_temp.end()-2), midpoint);
 
 	//calc the angle difference
-	float angle1 = calcRelativeAngle(centre_points.back(),midpoint); 
-	float angle2 = calcRelativeAngle(*(centre_points.end()-2),centre_points.back());
+	float angle1 = calcRelativeAngle(cenPoints_temp.back(),midpoint); 
+	float angle2 = calcRelativeAngle(*(cenPoints_temp.end()-2),cenPoints_temp.back());
 	float angle = angle1 - angle2; //same as calcAngle(...)
 	
 	
@@ -248,14 +232,15 @@ PathPoint PathPlanner::generateCentrePoint(Cone* cone_one, Cone* cone_two, bool&
 		//record the cones
 		midpoint.cone1 = cone_one;
 		midpoint.cone2 = cone_two;
+		midpoint.angle = angle;
 	}
 	else
 	{
 		if (DEBUG)
 		{
 			std::cout << "[XX] Rejected point: (" << midpoint.x << ", " << midpoint.y << ") ";
-			std::cout<<"previous points: ("<<centre_points.back().x<<", "<<centre_points.back().y<<")";
-			std::cout<<" ("<<(*(centre_points.end()-2)).x<<", "<<(*(centre_points.end()-2)).y<<")";
+			std::cout<<"previous points: ("<<cenPoints_temp.back().x<<", "<<cenPoints_temp.back().y<<")";
+			std::cout<<" ("<<(*(cenPoints_temp.end()-2)).x<<", "<<(*(cenPoints_temp.end()-2)).y<<")";
 			std::cout << " dist and angle: " << dist_back1 << " " << angle1<<" - "<<angle2 <<std::endl;
 		}
 		feasible = false;
@@ -268,21 +253,6 @@ PathPoint PathPlanner::generateCentrePoint(Cone* cone_one, Cone* cone_two, bool&
 
 	return midpoint;
 }
-void PathPlanner::addFirstPoints()
-{
-	// cones are sorted by distance to init pos, so front of left/right cones are the nearest cones
-	PathPoint midpoint(
-		(left_cones.front()->position.x + right_cones.front()->position.x) / 2,
-		(left_cones.front()->position.y + right_cones.front()->position.y) / 2
-	);
-	centre_points.push_back(midpoint);
-	centre_points.back().cone1 = left_cones.front();
-	centre_points.back().cone2 = right_cones.front();
-	left_cones.front()->mapped++;
-	left_cones.front()->paired++;
-	right_cones.front()->mapped++;
-	right_cones.front()->paired++;
-}
 
 // adds new path points to vector centre_points. uses generateCentrePoint()
 void PathPlanner::addCentrePoints()
@@ -292,79 +262,107 @@ void PathPlanner::addCentrePoints()
 
 	bool feasible;
 	PathPoint cp;
-	int indx1, indx2;
+	int indx1,indx2;
 	Cone* opp_cone;
-	thisSide_cone.clear();
-	oppSide_cone.clear();
-	cenPoints_temp.clear();
+	cenPoints_temp1.clear();
+	cenPoints_temp2.clear();
 
+	cenPoints_temp1.push_back(*(centre_points.end()-2));
+	cenPoints_temp2.push_back(*(centre_points.end()-2));
+	cenPoints_temp1.push_back(centre_points.back());
+	cenPoints_temp2.push_back(centre_points.back());
 
-	//we will look at the side with more cones seen
-	if (right_cones.size() > left_cones.size())
+	int c = 0;
+	for (int i = leftIndx; i < left_cones.size(); i++)
 	{
-		for (auto &con:right_cones)
-			thisSide_cone.push_back(con);
-		for (auto &con:left_cones)
-			oppSide_cone.push_back(con);
-		indx1 = rightIndx;
-		indx2 = leftIndx;
-	}
-	else if (left_cones.size() >= right_cones.size())
-	{
-		for (auto &con:left_cones)
-			thisSide_cone.push_back(con);
-		for (auto &con: right_cones)
-			oppSide_cone.push_back(con);
-		indx1 = leftIndx;
-		indx2 = rightIndx;
-	}
-	
-	for (int i = indx1; i < thisSide_cone.size(); i++)
-	{
+		if (c==2) //so we only generate 2 new path points
+			break;
 		// only generate points from cones that havent been passed by yet, or if paired less than 3 times
-		if((!thisSide_cone[i]->passedBy)||(thisSide_cone[i]->paired<3))
+		if((!left_cones[i]->passedBy)||(left_cones[i]->paired<3))
 		{
-			opp_cone = findOppositeClosest(*thisSide_cone[i], oppSide_cone);
+			opp_cone = findOppositeClosest(*left_cones[i], right_cones);
 			feasible = false;
-			cp = generateCentrePoint(thisSide_cone[i], opp_cone, feasible);
+			cp = generateCentrePoint(left_cones[i], opp_cone, feasible,cenPoints_temp1);
 			if (feasible)
 			{
+				c++;
 				// centre_points.push_back(cp);
-				cenPoints_temp.push_back(cp);	
-				thisSide_cone[i]->mapped++;
-				opp_cone->mapped++;
-				thisSide_cone[i]->paired++;
-				opp_cone->paired++;
+				cenPoints_temp1.push_back(cp);
+				
 			}
 		}
 	}
 
-	for (int i = indx2; i< oppSide_cone.size();i++)
+	c=0;
+	for (int i = rightIndx; i < right_cones.size(); i++)
 	{
-		//only generate points in this loop for cones that havent been paired from previous loop
-		if ((!oppSide_cone[i]->passedBy)&&(oppSide_cone[i]->paired==0))
+		if (c==2) //so we only generate 2 new path points
+			break;
+		// only generate points from cones that havent been passed by yet, or if paired less than 3 times
+		if((!right_cones[i]->passedBy)||(right_cones[i]->paired<3))
 		{
-			opp_cone = findOppositeClosest(*oppSide_cone[i],thisSide_cone);
+			opp_cone = findOppositeClosest(*right_cones[i], left_cones);
 			feasible = false;
-			cp = generateCentrePoint(oppSide_cone[i],opp_cone,feasible);
+			cp = generateCentrePoint(right_cones[i], opp_cone, feasible,cenPoints_temp2);
 			if (feasible)
 			{
-				cenPoints_temp.push_back(cp);
-				cp.cone1->paired ++;
-				cp.cone2->paired ++;	
-				oppSide_cone[i]->mapped++;
-				opp_cone->mapped++;
+				c++;
+				// centre_points.push_back(cp);
+				cenPoints_temp2.push_back(cp);
 			}
 		}
 	}
-	sortPathPoints(cenPoints_temp,centre_points.back());
-	for (auto &p:cenPoints_temp)
-	{
-		centre_points.push_back(p);
-	}
+
+	std::vector<PathPoint> temp;
+	temp = cenPoints_temp2;
+	bool dup = false;
+	//combine the temp cenpoints
 	
+	for (auto &p1:cenPoints_temp1)
+	{
+		for(auto &p2:cenPoints_temp2)
+		{
+			if (calcDist(p1,p2)<=0.1)
+			{
+				dup=true;
+				break;
+			}
+		}
+
+		if (!dup)
+		{
+			temp.push_back(p1);
+		}
+		dup = false;
+	}
 
 
+	sortPathPoints(temp,temp.front()); 
+	for (int i=2;i<temp.size();i++) //first 2 in temp are just copies from centre_points
+	{
+		temp[i].cone1->paired++;
+		temp[i].cone1->mapped++;
+		temp[i].cone2->paired++;
+		temp[i].cone2->mapped++;
+		centre_points.push_back(temp[i]);
+		
+	}
+
+}
+//for adding first Centre points at the beginning of race, 
+void PathPlanner::addFirstCentrePoints()
+{
+	sortConesByDist(init_pos);		// sort first seen cones by distance
+	centre_points.emplace_back(
+		(left_cones.front()->position.x + right_cones.front()->position.x) / 2,
+		(left_cones.front()->position.y + right_cones.front()->position.y) / 2
+	);
+	centre_points.back().cone1 = left_cones.front();
+	centre_points.back().cone2 = right_cones.front();
+	left_cones.front()->paired++;
+	left_cones.front()->mapped++;
+	right_cones.front()->paired++;
+	right_cones.front()->mapped++;
 }
 
 //add new cones to the local vector of cones and sort by colour
@@ -448,6 +446,11 @@ void PathPlanner::updateStoredCones(std::vector<Cone>&new_cones)
 						future_cones.push_back(&raw_cones[i]);
 				}
 			}
+			else //(if passed by but not paired, add to future cones again for sorting)
+			{
+				if (raw_cones[i].paired == 0)
+					future_cones.push_back(&raw_cones[i]);
+			}
 		}
 	}
 
@@ -497,7 +500,7 @@ void PathPlanner::updateCentrePoints()
 	float dist;
 	float min_dist = 9000;
 	int nearest_indx=-1;
-	// std::cout<<"centre points size before update: "<<temp;
+	std::cout<<"centre points size before update: "<<temp<<std::endl;
 	if (temp <= 2)
 	{	
 		std::cout<<"\n";
@@ -519,14 +522,16 @@ void PathPlanner::updateCentrePoints()
 		}
 		
 		// pop path points if their cones havent been passed by yet
-		for (int i = centre_points.size()-1;i>=0;i--)
+		for (int i = centre_points.size()-1;i>1;i--)
 		{
-			if(centre_points[i].cone1 == NULL) //for orange cones 
+			if((centre_points[i].cone1 == NULL)||(centre_points[i].cone2 == NULL)) //for orange cones 
+			// NULL is used since there can be 4 orange cones
 			{
 				centre_points.pop_back();
 				timingCalc = false;
+				if (DEBUG) std::cout<<"timing cones path point popped!"<<std::endl;
 			}
-			else if(!centre_points[i].cone1->passedBy)
+			else if(!centre_points[i].cone1->passedBy || !centre_points[i].cone2->passedBy)
 			{
 				centre_points.back().cone1->paired --;
 				centre_points.back().cone2->paired --;
@@ -544,11 +549,14 @@ void PathPlanner::updateCentrePoints()
 				centre_points.back().cone1->paired --;
 				centre_points.back().cone2->paired --;
 				centre_points.pop_back();
+				std::cout<<"  experimental "<<std::endl;
 			}
+			
+	
 		}
 
 
-		// std::cout<<"  centre points size after update: "<<centre_points.size()<<std::endl;
+		std::cout<<"  centre points size after update: "<<centre_points.size()<<std::endl;
 	}
 }
      
@@ -586,9 +594,14 @@ void PathPlanner::centralizeTimingCones()
 		if (DEBUG) std::cout << "Average timing cones position calculated  ";
 		if (DEBUG) std::cout << "dist: "<<dist<<" angle: "<<angle<<std::endl;
 		timingCalc = true;
-		centre_points.push_back(startFinish);
 		// startFinish.cone1 = timing_cones.front();
 		// startFinish.cone2 = timing_cones.back();
+		startFinish.angle = angle;
+		centre_points.push_back(startFinish);
+		for (auto &t:timing_cones)
+		{
+			t->paired++;
+		}
 
 	}
 	else
@@ -646,7 +659,7 @@ void PathPlanner::sortConesByDist(const PathPoint &pos)
     for (auto &cone: right_unsorted) 
     {cone->dist = calcDist(pos, cone->position);}
 
-	// nlogn sort both cones_to_add vectors
+	//sort both cones_to_add vectors
 	if (left_unsorted.size()>1)
     sort(left_unsorted.begin(), left_unsorted.end(), compareConeDist);
 	if (right_unsorted.size()>1)
@@ -719,8 +732,8 @@ float PathPlanner::computeCost1(Cone* &cn1, Cone* &cn2)
 	return calcDist(cn1->position,cn2->position);
 }
 
-// cost 2: distance between cone from opposite side
-float PathPlanner::computeCost2(Cone* &cn1, std::vector<Cone*> &oppCone1,std::vector<Cone*> &oppCone2)
+// cost 2a: distance between nearest cone from opposite side, used during initialisation when only few cones are seen
+float PathPlanner::computeCost2a(Cone* &cn1, std::vector<Cone*> &oppCone1,std::vector<Cone*> &oppCone2)
 {
 	Cone* opp_cone = findOppositeClosest(*cn1,oppCone1);
 	float dist1 = calcDist(cn1->position,opp_cone->position);
@@ -732,6 +745,18 @@ float PathPlanner::computeCost2(Cone* &cn1, std::vector<Cone*> &oppCone1,std::ve
 	}
 
 	return std::min(dist1,dist2);
+}
+
+// cost 2b: distance between cone nearest to car  from opposite side 
+float PathPlanner::computeCost2b(Cone* &cn1, std::vector<Cone*> &oppCone)
+{
+	for (int i=oppCone.size()-1;i>=0;i--)
+	{
+		if (oppCone[i]->passedBy)
+		{
+			return calcDist(cn1->position,oppCone[i]->position);
+		}
+	}
 }
 
 // cost 3: change in track curvature cn2 is sorted cone
@@ -783,7 +808,7 @@ void PathPlanner::sortAndPushCone(std::vector<Cone*> &cn)
 
 	if (cn.size()<2) //if only 1 cone is seen, compute cost 2 (dist to opposite side) and compare to track width
 	{
-		float cost2 = computeCost2(cn.back(),oppSide_cone,oppSide_cone2);
+		float cost2 = computeCost2a(cn.back(),oppSide_cone,oppSide_cone2); //consider unsorted cone as well or this case
 		if (cost2 < TRACKWIDTH*1.25)
 		{
 			if (colour == 'b')
@@ -811,12 +836,12 @@ void PathPlanner::sortAndPushCone(std::vector<Cone*> &cn)
 		for (int i=0;i<cn.size();i++)
 		{		
 			cost1 = computeCost1(cn[i],thisSide_cone.back());
-			cost2 = computeCost2(cn[i],oppSide_cone,oppSide_cone2);
+			cost2 = computeCost2b(cn[i],oppSide_cone);//only consider sorted cones
 			cost3 = computeCost3(cn[i],thisSide_cone);
 
 			// might need to add different weights for each cost later,
 			// but it works with equal weights for now
-			cn[i]->cost = cost1 + (2*cost2) + (3*cost3);
+			cn[i]->cost = (cost1*cost1) + (2*cost2*cost2) + (1.5*cost3*cost3);
 			
 		}
 

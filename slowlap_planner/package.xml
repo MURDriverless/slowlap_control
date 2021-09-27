@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>slow_lap_control</name>
+  <name>slowlap_planner</name>
   <version>0.0.0</version>
   <description>The slow_lap_control package</description>
 

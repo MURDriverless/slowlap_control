@@ -5,8 +5,8 @@ struct PathPoint
 {
     PathPoint();
     PathPoint(float, float); 
-    float x;			//  x position on map
-    float y;			//  y position on map
+    float x;			// Corresponding to x position on map
+    float y;			// Corresponding to y position on map
     float radius = 0;
     float velocity = 0; 
     float angle = 0;

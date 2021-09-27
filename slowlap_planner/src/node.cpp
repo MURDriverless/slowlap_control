@@ -13,13 +13,12 @@
 PlannerNode::PlannerNode(ros::NodeHandle n, bool const_velocity, float v_max, float v_const, float max_f_gain)
     : nh(n), const_velocity(const_velocity), v_max(v_max), v_const(v_const), max_f_gain(max_f_gain)
 {
-    X.reserve(300);
-    Y.reserve(300);
-    V.reserve(300);
+    Path.reserve(300);
     Left.reserve(200);
     Right.reserve(200);
     cones.reserve(500);
     Markers.reserve(1000); 
+    // sortMarks.reserve(100);
     
     times.reserve(std::numeric_limits<uint16_t>::max());    // diagnostic stuff (MURauto20)
     rtimes.reserve(std::numeric_limits<uint16_t>::max());   // diagnostic stuff (MURauto20)
@@ -42,14 +41,14 @@ void PlannerNode::initialisePlanner()
             if (cn.colour == 'r')
                 countRed++;
         }
-        if ((countRed>1)&& cones.size()>3)
+        if (countRed>1)
         {
             this->planner = std::unique_ptr<PathPlanner>(new PathPlanner(car_x, car_y, cones, const_velocity, v_max, v_const, max_f_gain, Markers));
             ROS_INFO_STREAM("[PLANNER] Planner initialized");
             plannerInitialised = true;
         }
         else
-            std::cout<<"Not enough cones or Timing cones (orange) not yet found"<<std::endl;
+            std::cout<<"Timing cones (orange) not yet found"<<std::endl;
 
     }
     else
@@ -96,6 +95,8 @@ int PlannerNode::launchPublishers()
         pub_rcones = nh.advertise<mur_common::cone_msg>(SORTED_RCONES_TOPIC, 1);
         pub_pathCones = nh.advertise<visualization_msgs::MarkerArray>(PATH_CONES_TOPIC,1);
         pub_map = nh.advertise<mur_common::map_msg>(FINISHED_MAP_TOPIC,1);
+        // pub_sorting_markers = nh.advertise<visualization_msgs::MarkerArray>(SORTING_MARKER,1);
+        // pub_path_marks =  nh.advertise<visualization_msgs::MarkerArray>(PATH_MARKER,1);
 
     }
     catch (const char *msg)
@@ -141,11 +142,14 @@ void PlannerNode::SlowLapFinished()
     map.y_i = ConeY;
 
     //copy path points
-    map.x = X;
-    map.y = Y;
+    for (auto &p:Path)
+    {
+        map.x.push_back(p.x);
+        map.y.push_back(p.y);
+    }
 
     map.mapready = true;
-    map.frame_id = "map";
+    map.frame_id = FRAME;
 
     pub_map.publish(map);
 }
@@ -167,7 +171,7 @@ void PlannerNode::spinThread()
     waitForMsgs();
     if (plannerInitialised)
     {
-        planner->update(cones, car_x, car_y, X, Y, V, Left, Right,Markers,plannerComplete);
+        planner->update(cones, car_x, car_y, Path, Left, Right,Markers,plannerComplete);
         if (plannerComplete)
             SlowLapFinished();
         
@@ -205,10 +209,9 @@ void PlannerNode::pushHealth(ClockTP& s, ClockTP& e, ClockTP& rs, ClockTP& re)
 //clear temporary vectors, and reset some flags
 void PlannerNode::clearTempVectors()
 {
-    X.clear();
-    Y.clear();
-    V.clear();
+    Path.clear();
     Markers.clear();
+    // sortMarks.clear();
     Left.clear();
     Right.clear();
     cones.clear();
@@ -220,18 +223,18 @@ void PlannerNode::clearTempVectors()
 void PlannerNode::pushPathViz()
 {
     nav_msgs::Path path_viz_msg;
-    path_viz_msg.header.frame_id = "map"; //"map"
+    path_viz_msg.header.frame_id = FRAME; //"map"
 
     std::vector<geometry_msgs::PoseStamped> poses;
-    poses.reserve(X.size());
+    poses.reserve(Path.size());
 
-    for (int p = 0; p < X.size(); p++)
+    for (int p = 0; p < Path.size(); p++)
     {
         geometry_msgs::PoseStamped item; 
-        item.header.frame_id = "map";
+        item.header.frame_id = FRAME;
         item.header.seq = p;
-        item.pose.position.x = X[p];
-        item.pose.position.y = Y[p];
+        item.pose.position.x = Path[p].x;
+        item.pose.position.y = Path[p].y;
         item.pose.position.z = 0.0;
 
         poses.emplace_back(item);
@@ -239,16 +242,27 @@ void PlannerNode::pushPathViz()
 
     path_viz_msg.poses = poses;
     pub_path_viz.publish(path_viz_msg);
+
+    // visualization_msgs::MarkerArray pathMarks;
+    // pathMarks.markers.resize(Path.size());
+    // for (int i=0;i<Path.size();i++)
+    // {
+    //     setMarkerProperties2(&pathMarks.markers[i],Path[i],i,i,'p');
+    // }
+    // pub_path_marks.publish(pathMarks);
 }
 
 // publish path points for path follower
 void PlannerNode::pushPath()
 {
     mur_common::path_msg msg;
-    msg.header.frame_id = "map";
-    msg.x = X;
-    msg.y = Y;
-    msg.v = V;
+    msg.header.frame_id = FRAME;
+    for (auto &p:Path)
+    {
+        msg.x.push_back(p.x);
+        msg.y.push_back(p.y);
+        msg.v.push_back(p.velocity);
+    }
     pub_path.publish(msg);
 }
 
@@ -302,20 +316,54 @@ void PlannerNode::pushMarkers()
 {
     visualization_msgs::MarkerArray marks;
     marks.markers.resize(Markers.size()/2);
-    int j;
+    int j,k;
     for (int i=0; i<marks.markers.size(); i++)
     {
         j=2*i;
         setMarkerProperties(&marks.markers[i],Markers[j],Markers[j+1],i,Markers[i].accepted);
     }
     pub_pathCones.publish(marks);
+
+
+    // j=0;
+    // for (auto &c:Left)
+    // {
+    //     if(!c.passedBy)
+    //     {
+    //         sortMarks.push_back(c.position);
+    //         j++;
+    //     }
+    // }
+    // for (auto &c:Right)
+    // {
+    //     if(!c.passedBy)
+    //     {
+    //         sortMarks.push_back(c.position);
+    //     }
+    // }
+    // visualization_msgs::MarkerArray sortingMarks;
+    // sortingMarks.markers.resize(sortMarks.size());
+    // k=1;
+    // char col='b';
+    // for(int i=0;i<sortMarks.size();i++)
+    // {
+    //     if (i==j)
+    //     {
+    //         k = 1;
+    //         col = 'y';
+    //     }
+            
+    //     setMarkerProperties2(&sortingMarks.markers[i],sortMarks[i],i,k,col);
+    //     k++;      
+    // }
+    // pub_sorting_markers.publish(sortingMarks);
 }
 
 // marker properties
 // google Visualisation::Markers message for more details
 void PlannerNode::setMarkerProperties(visualization_msgs::Marker *marker,PathPoint cone1,PathPoint cone2,int n,bool accepted)
 {
-    marker->header.frame_id = "map";
+    marker->header.frame_id = FRAME;
     marker->header.stamp = ros::Time();
     marker->header.seq = n;
     marker->ns = "my_namespace";
@@ -364,8 +412,6 @@ void PlannerNode::setMarkerProperties(visualization_msgs::Marker *marker,PathPoi
     }
     if (plannerComplete)
     marker->color.a = 0.0;
-    
-
-    
+        
 }
 

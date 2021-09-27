@@ -27,7 +27,7 @@ struct Cone
     float track_width = 0.228;		// ..not used Default width of track (meters)
     unsigned char times_seen = 1;	// ..not used Times seen and scanned by SLAM
     unsigned int times_checked = 0; // ..not used
-    int mapped = 0;		            // number of times mapped
+    int mapped = 0;		        // number of times mapped
     bool passedBy = false;			// if passed by car
     int paired = 0;                 // count how many time paired to opp cone
     float dist;				        // Distance to car

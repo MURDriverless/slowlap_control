@@ -20,11 +20,11 @@
 #include "path_point.h"
 
 #define TRACKWIDTH 4
-#define MAX_PATH_ANGLE1 80      // angle constraint for the path point formed
-#define MAX_PATH_ANGLE2 280     // angle constraint for the path point formed
-#define MAX_POINT_DIST 10       // distance constraint for path point formed
+#define MAX_PATH_ANGLE1 50      // angle constraint for the path point formed
+#define MAX_PATH_ANGLE2 310     // angle constraint for the path point formed
+#define MAX_POINT_DIST 8       // distance constraint for path point formed
 #define MIN_POINT_DIST 0.5      // distance constraint for path point formed
-#define CERTAIN_RANGE 12         // if cone is within this range, cone positions are certain and no longer updated
+#define CERTAIN_RANGE 5.5         // if cone is within this range, cone positions are certain and no longer updated
 
 
 const bool DEBUG = true;        //  to show debug messages, switch to false to turn off
@@ -33,16 +33,16 @@ class PathPlanner
 {
 public:
     PathPlanner(float, float, std::vector<Cone>&, bool, float, float, float, std::vector<PathPoint>&);
-    void update(std::vector<Cone>&, const float, const float, std::vector<float>&, std::vector<float>&,
-                std::vector<float>&,std::vector<Cone> &,std::vector<Cone> &,std::vector<PathPoint>&, bool&);
+    void update(std::vector<Cone>&, const float, const float, std::vector<PathPoint>&,
+    std::vector<Cone> &,std::vector<Cone> &,std::vector<PathPoint>&, bool&);
     bool complete = false;
 
 private:
-    std::vector<PathPoint> centre_points;   // vector of path points
-    std::vector<PathPoint> cenPoints_temp;  // temporary vector
-    std::vector<PathPoint> rejected_points; // rejected path points, for visualisation purposes
-    std::vector<Cone> raw_cones;            // copy of cones passed by SLAM
-    std::vector<Cone*> future_cones;        // pointer to cones to be sorted
+    std::vector<PathPoint> centre_points;                   // vector of path points
+    std::vector<PathPoint> cenPoints_temp1,cenPoints_temp2 ;// temporary vector
+    std::vector<PathPoint> rejected_points;                 // rejected path points, for visualisation purposes
+    std::vector<Cone> raw_cones;                            // copy of cones passed by SLAM
+    std::vector<Cone*> future_cones;                        // pointer to cones to be sorted
     std::vector<Cone*> left_cones;		    // Cones on left-side of track (sorted)
     std::vector<Cone*> right_cones;		    // Cones on right-side of track (sorted)
     std::vector<Cone*> timing_cones;        // pointer to Orange cones		
@@ -87,22 +87,23 @@ private:
     void popConesToAdd();
     void calcSpline();
     void addCones(std::vector<Cone>&);
-    void addFirstPoints();
+    void addVelocityPoints();
     float calcRadius(const PathPoint&, const PathPoint&, const PathPoint&);
     float calcDist(const PathPoint&, const PathPoint&);
     void removeFirstPtr(std::vector<Cone*>&);
     void resetTempConeVectors();
-    void returnResult(std::vector<float>&, std::vector<float>&, std::vector<float>&,std::vector<Cone>&,
+    void returnResult(std::vector<PathPoint>&,std::vector<Cone>&,
                                                     std::vector<Cone>&,std::vector<PathPoint>&);
     void centralizeTimingCones();
     static float calcAngle(const PathPoint&, const PathPoint&, const PathPoint&);
     static float calcRelativeAngle(const PathPoint&, const PathPoint&);
     bool joinFeasible(const float&, const float&);
-    PathPoint generateCentrePoint(Cone*, Cone*, bool&);
+    PathPoint generateCentrePoint(Cone*, Cone*, bool&, std::vector<PathPoint>&);
     void updateStoredCones(std::vector<Cone>&);
     void updateCentrePoints();
     float computeCost1(Cone* &cn1, Cone* &cn2);
-    float computeCost2(Cone* &cn1, std::vector<Cone*> &oppCone1,std::vector<Cone*> &oppCone2);
+    float computeCost2a(Cone* &cn1, std::vector<Cone*> &oppCone1,std::vector<Cone*> &oppCone2);
+    float computeCost2b(Cone* &cn1, std::vector<Cone*> &oppCone);
     float computeCost3(Cone* &cn1, std::vector<Cone*> &cn2);
     static bool compareConeCost(Cone* const&, Cone* const&);
     static bool comparePointDist(PathPoint& pt1, PathPoint& pt2);

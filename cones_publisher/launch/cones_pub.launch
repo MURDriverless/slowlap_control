@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<launch>
+  
+    <!--################ Package #################-->
+    <node pkg="cones_publisher" type="cones_publisher" name="conesNode" output="screen">
+    </node>
+</launch>
+
