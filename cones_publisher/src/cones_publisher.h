@@ -18,7 +18,7 @@
 #include "path_point.h"
 
 // ROS topics
-#define ODOM_TOPIC "/odom"//etry/filtered"                     //"/mur/slam/Odom" in murSim  
+#define ODOM_TOPIC "/mur/slam/Odom"//etry/filtered"                     //"/mur/slam/Odom" in murSim  
 #define TRUE_CONES "/mur/slam/true_cones"
 #define CONE_TOPIC "/mur/slam/cones"
 #define RVIZ_CONES "cone_markers_sim"

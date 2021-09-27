@@ -133,6 +133,7 @@ void PathPlanner::returnResult(std::vector<PathPoint> &cp,
 								std::vector<Cone>&Left, std::vector<Cone>&Right,std::vector<PathPoint>&markers)
 {
 	int j=0;
+	if (DEBUG) std::cout<<"[PLANNER] sent path points: "<<centre_points.size()<<std::endl;
 	for (auto &e: centre_points)
 	{
 		cp.push_back(e);
@@ -356,6 +357,8 @@ void PathPlanner::addFirstCentrePoints()
 		(left_cones.front()->position.x + right_cones.front()->position.x) / 2,
 		(left_cones.front()->position.y + right_cones.front()->position.y) / 2
 	);
+	centre_points.back().cone1 = left_cones.front();
+	centre_points.back().cone2 = right_cones.front();
 	left_cones.front()->paired++;
 	left_cones.front()->mapped++;
 	right_cones.front()->paired++;
@@ -519,9 +522,10 @@ void PathPlanner::updateCentrePoints()
 		}
 		
 		// pop path points if their cones havent been passed by yet
-		for (int i = centre_points.size()-1;i>0;i--)
+		for (int i = centre_points.size()-1;i>1;i--)
 		{
 			if((centre_points[i].cone1 == NULL)||(centre_points[i].cone2 == NULL)) //for orange cones 
+			// NULL is used since there can be 4 orange cones
 			{
 				centre_points.pop_back();
 				timingCalc = false;
@@ -545,7 +549,10 @@ void PathPlanner::updateCentrePoints()
 				centre_points.back().cone1->paired --;
 				centre_points.back().cone2->paired --;
 				centre_points.pop_back();
+				std::cout<<"  experimental "<<std::endl;
 			}
+			
+	
 		}
 
 
