@@ -6,6 +6,6 @@ This repo combines the [Path Planner](https://github.com/MURDriverless/planner_e
 ![slowLap](https://user-images.githubusercontent.com/75785603/135066167-43974ba8-7d07-44f7-849b-55f4088bad53.gif)
 
 
-To do:
--transition to Fast Lap control after mapping the track
--full integration of the Perception System and SLAM
+# To do:
+- [ ] transition to Fast Lap control after mapping the track
+- [ ] full integration of the Perception System and SLAM
