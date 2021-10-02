@@ -3,6 +3,7 @@
 
 #include <ros/ros.h>                    // Must include for all ROS C++
 #include <geometry_msgs/PoseStamped.h>
+#include <visualization_msgs/Marker.h>      // rviz msgs
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/Point.h>
 #include <geometry_msgs/Accel.h>        //
@@ -31,7 +32,7 @@
 #define SPLINE_N 6                  // number of points to spline
 #define DT 0.05
 #define STOP_INDEX 2                // centre point where the car should stop
-#define DELTA_STEER 0.015           // change in steering angle 
+#define DELTA_STEER 0.05           // change in steering angle 
 
 //PID gains:
 #define KP 2   
@@ -41,11 +42,11 @@
 //pure pursuit gains
 #define K 0.1
 #define LFV  0.1                     // look forward gain
-#define LFC  3                    // look ahead distance 
+#define LFC  3.5                    // look ahead distance 
 #define V_CONST 3                  // constant velocity 3m/s (for now)
 #define MAX_V  3                   // for Husky, test only, should be 1m/s to match mur car
 #define MAX_W 30                     // for Husky, angular velo in degrees
-#define HZ 50                        // ROS spin frequency (can increase to 20)
+#define HZ 20                        // ROS spin frequency (can increase to 20)
 
 #define FRAME "map"
 // ROS topics
@@ -55,9 +56,10 @@
 #define ACCEL_TOPIC "/mur/accel_desired"
 #define STEER_TOPIC "/mur/control_desired"
 #define PATH_VIZ_TOPIC "/mur/follower/path_viz"
+#define GOALPT_VIZ_TOPIC "/mur/follower/goalpt_viz"
 #define FASTLAP_READY_TOPIC "/mur/control/transition"
 
-bool DEBUG = true;              //to show debug messages in terminal, switch to false to turn off
+bool DEBUG = false;              //to show debug messages in terminal, switch to false to turn off
 
 class PathFollower
 {
@@ -78,6 +80,7 @@ private:
     ros::Publisher pub_steer;
     ros::Publisher pub_target;
     ros::Publisher pub_path_viz;
+    ros::Publisher pub_goalPt;
 
     double max_v;
     double max_w;
@@ -118,7 +121,7 @@ private:
     int index = -1;                              // index in centre_splined for goal point
     int oldIndex = -1;                           // index in centre_splined for goal point
     int index_endOfLap = 1/STEPSIZE;             // index in centre_endOfLap for goal point
-    
+
     // actuation commands, publish to actuator
     double acceleration=0;
     double steering=0;
