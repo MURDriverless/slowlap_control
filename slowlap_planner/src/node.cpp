@@ -126,6 +126,8 @@ void PlannerNode::SlowLapFinished()
         ConeX.push_back(cn.position.x);
         ConeY.push_back(cn.position.y);
     }
+    ConeX.push_back(Left.front().position.x);
+    ConeY.push_back(Left.front().position.y);
     map.x_o = ConeX;
     map.y_o = ConeY;
     ConeX.clear();
@@ -138,6 +140,8 @@ void PlannerNode::SlowLapFinished()
         ConeX.push_back(cn.position.x);
         ConeY.push_back(cn.position.y);
     }
+    ConeX.push_back(Right.front().position.x);
+    ConeY.push_back(Right.front().position.y);
     map.x_i = ConeX;
     map.y_i = ConeY;
 
@@ -378,7 +382,7 @@ void PlannerNode::setMarkerProperties(visualization_msgs::Marker *marker,PathPoi
     marker->pose.orientation.y = 0.0;
     marker->pose.orientation.z = 0.0;
     marker->pose.orientation.w = 1.0;
-    marker->scale.x = 0.1;
+    marker->scale.x = 0.05;
     p1.x = cone1.x;
     p1.y = cone1.y;
     p1.z = 0;
@@ -388,9 +392,9 @@ void PlannerNode::setMarkerProperties(visualization_msgs::Marker *marker,PathPoi
     marker->points.push_back(p1);
     marker->points.push_back(p2);
 
-    marker->scale.x = 0.3;
-    marker->scale.y = 0.3;
-    marker->scale.z = 0.7;
+    marker->scale.x = 0.15;
+    marker->scale.y = 0.15;
+    marker->scale.z = 0.35;
 
     // alpha and RGB settings
     // color.a is opacity, 0: invisible

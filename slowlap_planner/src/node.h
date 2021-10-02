@@ -46,7 +46,7 @@
 #define FASTLAP_READY_TOPIC "/mur/control/transition"
 #define FINISHED_MAP_TOPIC "/mur/planner/map"
 
-#define HZ 20   // publish frequency
+#define HZ 12   // publish frequency
 #define FRAME "map"
 
 typedef std::chrono::high_resolution_clock Clock;               // (MURauto20)
