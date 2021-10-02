@@ -228,7 +228,7 @@ void PathFollower::pushPathViz()
     marker.id = index;
     marker.type = visualization_msgs::Marker::SPHERE;
     marker.action = visualization_msgs::Marker::ADD;
-    marker.lifetime = ros::Duration(1/HZ);
+    marker.lifetime = ros::Duration(0.05);
     marker.pose.position.x = currentGoalPoint.x;
     marker.pose.position.y = currentGoalPoint.y;
     marker.pose.orientation.x = 0.0;
