@@ -108,7 +108,8 @@ void PathFollower::odomCallback(const nav_msgs::Odometry &msg)
        initY = msg.pose.pose.position.y;
        initYaw = car_yaw;
        initialised = true;
-       
+       currentGoalPoint.updatePoint(PathPoint(initX,initY));
+       if (DEBUG) std::cout<<"[FOLLOWER] initial goal point is: ("<<currentGoalPoint.x<<", "<<currentGoalPoint.y<<") "<<std::endl;
     }
     car_x = msg.pose.pose.position.x;
     car_y = msg.pose.pose.position.y;
@@ -281,6 +282,12 @@ void PathFollower::DrivingControl()
     
     double targetSpeed = V_CONST;
     double dist = getDistFromCar(currentGoalPoint);
+    while (dist > 50)
+    {
+        currentGoalPoint.updatePoint(PathPoint(car_x,car_y));
+        dist = getDistFromCar(currentGoalPoint);
+
+    }
 
     if (endOfLap)
     {
