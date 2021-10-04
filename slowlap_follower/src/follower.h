@@ -59,7 +59,7 @@
 #define GOALPT_VIZ_TOPIC "/mur/follower/goalpt_viz"
 #define FASTLAP_READY_TOPIC "/mur/control/transition"
 
-bool DEBUG = false;              //to show debug messages in terminal, switch to false to turn off
+bool DEBUG = true;              //to show debug messages in terminal, switch to false to turn off
 
 class PathFollower
 {
