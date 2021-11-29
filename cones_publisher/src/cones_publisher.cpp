@@ -1,6 +1,6 @@
 /**
  * This publishes cone positions
- * by Aldrei MURauto21
+ * by Aldrei Recamadas (MURauto21)
  *
  * **/
 
@@ -24,7 +24,7 @@ ConesPublisher::ConesPublisher(ros::NodeHandle n) :nh(n)
     ROS_INFO_STREAM("CONES PUBLISHER: initialized!");
 }
 
-;void ConesPublisher::waitForMsgs()
+void ConesPublisher::waitForMsgs()
 {
     if (!trueCones_msg_received || !odom_msg_received && ros::ok()) 
     {
@@ -36,11 +36,8 @@ void ConesPublisher::spin()
 {
     waitForMsgs();
     detectCones();
-    // makeUncertain(); //uncomment this to simulate uncertainty
+    makeUncertain(); //uncomment this to simulate uncertainty
     publishCones();
-    // if (trueCones_msg_received) std::cout<<"cones received! cones size: "<<true_cones.size()<<std::endl;
-    // if (true_cones.size() > 5 && (true_cones.size() == seen_cones.size()))
-    //     last_cone = true;
     clearTemps();
     ros::Rate(HZ).sleep();
 }
@@ -119,8 +116,6 @@ void ConesPublisher::trueConesCallback(const mur_common::cone_msg &msg)
                 true_cones.back().position.x -= -13.0;
                 true_cones.back().position.y -= 10.3;
             }
-            // true_cones.back().position.x -= -14.5;
-            // true_cones.back().position.y -= 0;
         }
         
     trueCones_msg_received = true;

@@ -46,7 +46,7 @@
 #define FASTLAP_READY_TOPIC "/mur/control/transition"
 #define FINISHED_MAP_TOPIC "/mur/planner/map"
 
-#define HZ 12   // publish frequency
+#define HZ 12   // publish frequency // doesnt need to be  high // should coordinate with auto steering/braking
 #define FRAME "map"
 
 typedef std::chrono::high_resolution_clock Clock;               // (MURauto20)
@@ -107,12 +107,13 @@ private:
     ros::Publisher pub_sorting_markers;
     ros::Publisher pub_path_marks;
 
-    ros::Time now;                  // diagnostic stuff (MURauto20)
+    // MURauto21 didnt use these stuff, but didnt erase for future use
+    ros::Time now;                  // diagnostic stuff (MURauto20) 
     std::vector<uint32_t> times;    // diagnostic stuff (MURauto20)
     std::vector<uint32_t> rtimes;   // diagnostic stuff (MURauto20)
     uint64_t compute_time;          // diagnostic stuff (MURauto20)
 
-    bool slowLapDone = false;           // flag when slo lap is done
+    bool slowLapDone = false;           // flag when slow lap is done
     bool cone_msg_received = false;     // flag when cone msgs are received by subscriber
     bool odom_msg_received = false;     // flag when odom msgs are received by subscriber
     bool plannerInitialised = false;    // flag when planner is initialised

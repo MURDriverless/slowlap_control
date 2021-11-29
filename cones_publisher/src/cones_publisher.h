@@ -1,12 +1,12 @@
 #ifndef HUSKY_PATH_FOLLOWER_H
 #define HUSKY_PATH_FOLLOWER_H
 
-#include <ros/ros.h>                // Must include for all ROS C++
-#include <nav_msgs/Odometry.h>      // Msg from /odometry/filtered
-#include <tf/tf.h>                  // For Convertion from Quartenion to Euler
-#include "mur_common/path_msg.h"    // path msg from mur_common
-#include "mur_common/cone_msg.h"    // cone messages 
-#include <visualization_msgs/Marker.h> // for RVIZ markers
+#include <ros/ros.h>                        // Must include for all ROS C++
+#include <nav_msgs/Odometry.h>              // Msg from /odometry/filtered
+#include <tf/tf.h>                          // For Convertion from Quartenion to Euler
+#include "mur_common/path_msg.h"            // path msg from mur_common
+#include "mur_common/cone_msg.h"            // cone messages 
+#include <visualization_msgs/Marker.h>      // for RVIZ markers
 #include <visualization_msgs/MarkerArray.h> //fro RVIZ markers
 #include <cmath>
 #include <sstream>
@@ -24,7 +24,7 @@
 #define RVIZ_CONES "cone_markers_sim"
 #define FRAME "map" //"map"
 
-#define SENSOR_RANGE 12
+#define SENSOR_RANGE 16
 #define CERTAIN_RANGE 5.5
 #define HZ 10
 

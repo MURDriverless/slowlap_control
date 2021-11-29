@@ -7,7 +7,7 @@
  * 
  * for future improvement: generate velocity reference as well
  * 
- * author: Aldrei (MURauto21)
+ * author: Aldrei Recamadas (MURauto21)
  **/
 
 #include "path_planner.h"
@@ -99,6 +99,8 @@ void PathPlanner::update(std::vector<Cone> &new_cones, const float car_x, const 
 		resetTempConeVectors();
 	}
 }
+
+//function to sort pathpoints by distance to a reference point
 void PathPlanner::sortPathPoints(std::vector<PathPoint>&cenPoin,PathPoint&refPoint)
 {
 	
@@ -114,7 +116,7 @@ bool PathPlanner::joinFeasible(const float &car_x, const float &car_y)
 {
 	float dist = calcDist(centre_points.back(), init_pos);
 	if (DEBUG) std::cout<<"[PLANNER] Distance of latest path point to finish line: "<<(dist+6)<<std::endl; //start/finish line is 6m in fron to init (rules)
-	if ( (dist) < 5 || (calcDist(car_pos,left_cones.front()->position)<CERTAIN_RANGE)) //if less than 2 meters 
+	if ( (dist) < 5 || (calcDist(car_pos,left_cones.front()->position)<CERTAIN_RANGE)) //if less than 5 or 2 meters (magic number), should define in h file
 	{
 		float angle = calcRelativeAngle(centre_points.front(), centre_points.back()) - calcRelativeAngle(centre_points.back(), *(centre_points.end() - 2));
 		// float angle = calcAngle(*(centre_points.end() - 2), centre_points.back(), centre_points.front());
@@ -771,7 +773,7 @@ float PathPlanner::computeCost3(Cone* &cn1, std::vector<Cone*> &cn2)
 }
 
 
-// rhis function sorts the cones using the cost function,
+// this function sorts the cones using the cost function,
 // then pushes the cones to the sorted vector left/right
 void PathPlanner::sortAndPushCone(std::vector<Cone*> &cn)
 {
