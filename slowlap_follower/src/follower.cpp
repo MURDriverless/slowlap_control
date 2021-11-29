@@ -6,7 +6,7 @@
  * uses pure pursuit controller, velocity is constant for now
  * 
  * see header file for descriptions of member variables
- * author: Aldrei (MURauto21)
+ * author: Aldrei Recamadas (MURauto21)
 */
 
 #include "follower.h"
@@ -179,6 +179,7 @@ void PathFollower::pathCallback(const mur_common::path_msg &msg)
     }
 }
 
+//not used
 void PathFollower::pushDesiredCtrl()
 {
     geometry_msgs::Twist ctrl_desired; 
@@ -188,6 +189,7 @@ void PathFollower::pushDesiredCtrl()
     ctrl_desired.angular.z = steering;
     pub_steer.publish(ctrl_desired);
 }
+//not used
 void PathFollower::pushDesiredAccel()
 {
     geometry_msgs::Accel accel_desired;

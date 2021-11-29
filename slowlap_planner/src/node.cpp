@@ -3,7 +3,7 @@
  * some of these are copied from Joseph (MURauto20) and modified a bit 
  * see header file for description of member variables
  * 
- * author: Aldrei (MURauto21)
+ * author: Aldrei Recamadas (MURauto21)
 **/
 
 
@@ -70,14 +70,14 @@ int PlannerNode::launchSubscribers()
 {
     try
     {
-	sub_odom = nh.subscribe(MUR_ODOM_TOPIC, 1, &PlannerNode::odomCallback, this);
-	sub_cones = nh.subscribe(CONE_TOPIC, 1, &PlannerNode::coneCallback, this);
-    sub_transition = nh.subscribe(FASTLAP_READY_TOPIC, 1, &PlannerNode::transitionCallback, this);
+        sub_odom = nh.subscribe(MUR_ODOM_TOPIC, 1, &PlannerNode::odomCallback, this);
+        sub_cones = nh.subscribe(CONE_TOPIC, 1, &PlannerNode::coneCallback, this);
+        sub_transition = nh.subscribe(FASTLAP_READY_TOPIC, 1, &PlannerNode::transitionCallback, this);
     }
     catch (const char *msg)
     {
-	ROS_ERROR_STREAM(msg);
-	return 0;
+        ROS_ERROR_STREAM(msg);
+        return 0;
     }
     ROS_INFO_STREAM("[PLANNER] Odometry and cone subscribers connect");
     return 1;
@@ -95,9 +95,7 @@ int PlannerNode::launchPublishers()
         pub_rcones = nh.advertise<mur_common::cone_msg>(SORTED_RCONES_TOPIC, 1);
         pub_pathCones = nh.advertise<visualization_msgs::MarkerArray>(PATH_CONES_TOPIC,1);
         pub_map = nh.advertise<mur_common::map_msg>(FINISHED_MAP_TOPIC,1);
-        // pub_sorting_markers = nh.advertise<visualization_msgs::MarkerArray>(SORTING_MARKER,1);
-        // pub_path_marks =  nh.advertise<visualization_msgs::MarkerArray>(PATH_MARKER,1);
-
+        
     }
     catch (const char *msg)
     {
@@ -195,7 +193,7 @@ void PlannerNode::spinThread()
     ros::Rate(HZ).sleep();
 }
 
-// diagnostic stuff (MURauto20)
+// diagnostic stuff (MURauto20) not used in 2021
 void PlannerNode::pushHealth(ClockTP& s, ClockTP& e, ClockTP& rs, ClockTP& re)
 {
     mur_common::diagnostic_msg h;
@@ -246,14 +244,6 @@ void PlannerNode::pushPathViz()
 
     path_viz_msg.poses = poses;
     pub_path_viz.publish(path_viz_msg);
-
-    // visualization_msgs::MarkerArray pathMarks;
-    // pathMarks.markers.resize(Path.size());
-    // for (int i=0;i<Path.size();i++)
-    // {
-    //     setMarkerProperties2(&pathMarks.markers[i],Path[i],i,i,'p');
-    // }
-    // pub_path_marks.publish(pathMarks);
 }
 
 // publish path points for path follower
@@ -328,39 +318,6 @@ void PlannerNode::pushMarkers()
     }
     pub_pathCones.publish(marks);
 
-
-    // j=0;
-    // for (auto &c:Left)
-    // {
-    //     if(!c.passedBy)
-    //     {
-    //         sortMarks.push_back(c.position);
-    //         j++;
-    //     }
-    // }
-    // for (auto &c:Right)
-    // {
-    //     if(!c.passedBy)
-    //     {
-    //         sortMarks.push_back(c.position);
-    //     }
-    // }
-    // visualization_msgs::MarkerArray sortingMarks;
-    // sortingMarks.markers.resize(sortMarks.size());
-    // k=1;
-    // char col='b';
-    // for(int i=0;i<sortMarks.size();i++)
-    // {
-    //     if (i==j)
-    //     {
-    //         k = 1;
-    //         col = 'y';
-    //     }
-            
-    //     setMarkerProperties2(&sortingMarks.markers[i],sortMarks[i],i,k,col);
-    //     k++;      
-    // }
-    // pub_sorting_markers.publish(sortingMarks);
 }
 
 // marker properties
